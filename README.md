@@ -1,93 +1,124 @@
-# Secure demo app
+# Authn/Authz Security Demo
 
-Small Fastify + Prisma (SQLite) API demonstrating authentication, server-side sessions, RBAC, rate limiting, input validation, audit logging, and basic secret handling.
+Small Fastify + Prisma (SQLite) API that demonstrates:
 
-## Prerequisites
+- login + server-side sessions
+- role-based access control (RBAC)
+- secure API patterns (validation, rate limits, headers)
+- audit logging for sensitive actions
+
+## Quick start
+
+### 1) Requirements
 
 - Node.js 20+
 - npm
 
-## Version control
-
-If `git init` fails on this path (some cloud-sync folders restrict `.git`), run Git from a clone elsewhere or adjust sync exclusions, then copy the project.
-
-## Setup
+### 2) Install and initialize
 
 ```bash
 cp .env.example .env
-# Ensure SESSION_SECRET is at least 32 characters (example file is valid for local dev).
 npm install
 npx prisma migrate deploy
 npm run db:seed
 ```
 
-## Run
+### 3) Start the app
 
 ```bash
 npm run dev
-# or
-npm run build && npm start
 ```
 
-Default port: `3000` (override with `PORT` in `.env`).
+API runs on `http://localhost:3000` by default.  
+To run production build:
 
-## Demo accounts (after seed)
+```bash
+npm run build
+npm start
+```
 
-| Email               | Password      | Roles                          |
-|---------------------|---------------|--------------------------------|
-| admin@example.com   | AdminPass1!x  | admin, user                    |
-| user@example.com    | UserPass1!x   | user                           |
-| auditor@example.com | AuditPass1!x  | auditor_readonly               |
+## Seeded users
 
-## API overview
+After `npm run db:seed`, three users exist:
 
-- `GET /health` — liveness (no auth).
-- `POST /auth/register` — create user (default role `user`).
-- `POST /auth/login` — sets signed `httpOnly` session cookie `sid`.
-- `POST /auth/logout` — clears session (requires auth).
-- `GET /auth/me` — current user and roles.
-- `PATCH /auth/password` — change password; ends all sessions (requires auth).
-- `GET/POST/PATCH/DELETE /api/documents` — CRUD; owners see only their docs; `admin` can access any.
-- `GET /api/audit/events` — recent audit rows (`admin`, `auditor_readonly`).
-- `GET /api/admin/users` — list users (`admin` only).
-- `POST /api/admin/users/:userId/roles` — assign role (`admin` only).
+| Email | Roles |
+|------|------|
+| `admin@example.com` | `admin`, `user` |
+| `user@example.com` | `user` |
+| `auditor@example.com` | `auditor_readonly` |
 
-Use a cookie-aware client (browser, `curl -c/-b`, or Postman) for session auth.
+Password values are defined only in `prisma/seed.cjs` for local demo convenience.  
+Do not use seeded credentials in production.
 
-Example:
+## Main API endpoints
+
+### Health
+
+- `GET /health` - service health check
+
+### Authentication / session
+
+- `POST /auth/register` - create a new user (default role `user`)
+- `POST /auth/login` - login and set signed `httpOnly` cookie (`sid`)
+- `POST /auth/logout` - logout and clear session cookie (auth required)
+- `GET /auth/me` - current user and roles (auth required)
+- `PATCH /auth/password` - change password, revoke all sessions (auth required)
+
+### Documents (protected)
+
+- `GET /api/documents`
+- `POST /api/documents`
+- `GET /api/documents/:id`
+- `PATCH /api/documents/:id`
+- `DELETE /api/documents/:id`
+
+Regular users can only access their own documents; `admin` can access all.
+
+### Admin / audit
+
+- `GET /api/admin/users` - list users (`admin` only)
+- `POST /api/admin/users/:userId/roles` - assign role (`admin` only)
+- `GET /api/audit/events` - read audit events (`admin` or `auditor_readonly`)
+
+## Example: login with curl
+
+Use a cookie-aware client (browser, Postman, or curl with cookie file):
 
 ```bash
 curl -s -c cookies.txt -H "Content-Type: application/json" \
   -d '{"email":"user@example.com","password":"UserPass1!x"}' \
   http://localhost:3000/auth/login
+
 curl -s -b cookies.txt http://localhost:3000/auth/me
 ```
 
-## Security notes
+## Security features included
 
-- **Secrets**: Never commit `.env`. In production use a secrets manager (AWS Secrets Manager, GCP Secret Manager, Doppler, 1Password Secrets Automation, etc.) and inject env vars at runtime.
-- **Cookies**: `sid` is `httpOnly`, `sameSite=lax`, and `secure` when `NODE_ENV=production`.
-- **Sessions**: Opaque random token in DB; new login revokes prior sessions for that user.
-- **Passwords**: Argon2id hashes only.
-- **Authz**: Route guards plus object-level checks on documents (IDOR mitigation).
-- **Validation**: Zod on mutating routes.
-- **Rate limits**: Global limiter + stricter bucket on `/auth`; extra per-IP+email throttle on login failures.
-- **Headers**: `@fastify/helmet` enabled (CSP disabled for simple JSON API clients).
-- **CORS**: Set `CORS_ORIGINS` to a comma-separated allowlist for browser apps; empty means CORS disabled for cross-origin browsers.
-- **CSRF**: Same-site cookie session reduces CSRF risk for same-site deployments. If you add a SPA on another origin, add CSRF tokens or use `SameSite=strict` with a BFF pattern—document your choice.
-- **Dependencies**: Run `npm audit` regularly; enable Dependabot on the repo.
+- Argon2id password hashing
+- server-side opaque sessions in DB
+- signed `httpOnly` cookie, `SameSite=Lax`, `Secure` in production
+- RBAC middleware and object-level checks (IDOR protection)
+- Zod request validation
+- global + auth route rate limiting
+- security headers via `@fastify/helmet`
+- audit logs for login, password, role, and document actions
+
+## Environment variables
+
+See `.env.example`:
+
+- `DATABASE_URL`
+- `SESSION_SECRET` (minimum 32 chars)
+- `NODE_ENV`
+- `PORT`
+- `CORS_ORIGINS`
+
+## Project notes
+
+- Never commit `.env` or real secrets.
+- For production, use a managed secret store and HTTPS.
+- If Git behaves oddly in cloud-sync folders, use a local clone path for development.
 
 ## Threat model
 
 See [THREAT_MODEL.md](THREAT_MODEL.md).
-
-## Requirement map
-
-| Concern              | Mechanism                                      | Where                          |
-|----------------------|------------------------------------------------|--------------------------------|
-| Authentication       | Argon2 + DB sessions + signed cookie           | `src/routes/auth.ts`, `sessionPlugin.ts` |
-| Authorization        | RBAC + document ownership                      | `src/auth/guards.ts`, `routes/documents.ts`, `admin.ts` |
-| Session hygiene      | Rotation on login; password change revokes all | `routes/auth.ts`               |
-| Rate limiting        | `@fastify/rate-limit` + login throttle         | `src/index.ts`, `routes/auth.ts` |
-| Server validation    | Zod                                            | Route files                    |
-| Audit                | `AuditEvent` rows                              | `src/lib/audit.ts`, routes     |
