@@ -1,0 +1,66 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  passwordHash String
+  createdAt    DateTime  @default(now())
+  sessions     Session[]
+  documents    Document[]
+  userRoles    UserRole[]
+  auditEvents  AuditEvent[] @relation("ActorAuditEvents")
+}
+
+model Role {
+  id        String     @id @default(cuid())
+  name      String     @unique
+  userRoles UserRole[]
+}
+
+model UserRole {
+  userId String
+  roleId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role   Role   @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+}
+
+model Document {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  body      String   @default("")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model AuditEvent {
+  id           String   @id @default(cuid())
+  actorUserId  String?
+  actor        User?    @relation("ActorAuditEvents", fields: [actorUserId], references: [id], onDelete: SetNull)
+  action       String
+  resourceType String?
+  resourceId   String?
+  ip           String?
+  userAgent    String?
+  metadata     String?
+  createdAt    DateTime @default(now())
+}
