@@ -45,8 +45,9 @@ After `npm run db:seed`, three users exist:
 | `user@example.com` | `user` |
 | `auditor@example.com` | `auditor_readonly` |
 
-Password values are defined only in `prisma/seed.cjs` for local demo convenience.  
-Do not use seeded credentials in production.
+Passwords come from env vars (`SEED_ADMIN_PASSWORD`, `SEED_USER_PASSWORD`, `SEED_AUDITOR_PASSWORD`).  
+For local demo speed, `.env.example` includes placeholders you can replace.  
+Do not use demo credentials in production.
 
 ## Main API endpoints
 
@@ -84,7 +85,7 @@ Use a cookie-aware client (browser, Postman, or curl with cookie file):
 
 ```bash
 curl -s -c cookies.txt -H "Content-Type: application/json" \
-  -d '{"email":"user@example.com","password":"UserPass1!x"}' \
+  -d '{"email":"user@example.com","password":"'"$SEED_USER_PASSWORD"'"}' \
   http://localhost:3000/auth/login
 
 curl -s -b cookies.txt http://localhost:3000/auth/me
@@ -110,6 +111,9 @@ See `.env.example`:
 - `NODE_ENV`
 - `PORT`
 - `CORS_ORIGINS`
+- `SEED_ADMIN_PASSWORD`
+- `SEED_USER_PASSWORD`
+- `SEED_AUDITOR_PASSWORD`
 
 ## Project notes
 
@@ -120,3 +124,15 @@ See `.env.example`:
 ## Threat model
 
 See [THREAT_MODEL.md](THREAT_MODEL.md).
+
+## Learn and present this project
+
+- Step-by-step live demo script: [`docs/DEMO_WALKTHROUGH.md`](docs/DEMO_WALKTHROUGH.md)
+- Architecture + security control mapping: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
+
+## Next roadmap
+
+- Add MFA or step-up auth for sensitive actions
+- Add account lockout and optional captcha on repeated login failures
+- Add refresh-token style session rotation policy for longer-lived sessions
+- Move from SQLite to PostgreSQL for multi-user concurrency
