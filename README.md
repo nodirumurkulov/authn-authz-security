@@ -1,6 +1,4 @@
-# Authn/Authz Security Demo
-
-Small Fastify + Prisma (SQLite) API that demonstrates:
+Small Fastify + Prisma (SQLite) API demonstrating authentication, server-side sessions, RBAC, rate limiting, input validation, audit logging, and basic secret handling.
 
 - login + server-side sessions
 - role-based access control (RBAC)
