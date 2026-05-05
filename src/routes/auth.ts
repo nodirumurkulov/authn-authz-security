@@ -1,18 +1,27 @@
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import { prisma } from "../prisma.js";
-import { hashPassword, verifyPassword } from "../lib/password.js";
-import { newSessionToken } from "../lib/sessionToken.js";
+import { hashPassword, verifyPassword, dummyVerify } from "../lib/password.js";
+import { newSessionToken, hashSessionToken } from "../lib/sessionToken.js";
 import { writeAudit } from "../lib/audit.js";
 import { requireAuth } from "../auth/guards.js";
 import { clearSessionCookie, setSessionCookie } from "../auth/sessionPlugin.js";
 
-const SESSION_MS = 7 * 24 * 60 * 60 * 1000;
+const SESSION_MS = 24 * 60 * 60 * 1000;
 const SESSION_MAX_AGE_SEC = Math.floor(SESSION_MS / 1000);
+
+const passwordPolicy = z
+  .string()
+  .min(10)
+  .max(128)
+  .regex(/[a-z]/, "Password must contain at least one lowercase letter")
+  .regex(/[A-Z]/, "Password must contain at least one uppercase letter")
+  .regex(/[0-9]/, "Password must contain at least one digit")
+  .regex(/[^a-zA-Z0-9]/, "Password must contain at least one special character");
 
 const registerSchema = z.object({
   email: z.string().email().max(320),
-  password: z.string().min(10).max(128),
+  password: passwordPolicy,
 });
 
 const loginSchema = z.object({
@@ -22,11 +31,25 @@ const loginSchema = z.object({
 
 const changePasswordSchema = z.object({
   currentPassword: z.string().min(1).max(128),
-  newPassword: z.string().min(10).max(128),
+  newPassword: passwordPolicy,
 });
 
 type LoginBucket = { count: number; resetAt: number };
 const loginBuckets = new Map<string, LoginBucket>();
+
+const THROTTLE_CLEANUP_INTERVAL_MS = 60_000;
+let throttleCleanupTimer: ReturnType<typeof setInterval> | null = null;
+
+function startThrottleCleanup(): void {
+  if (throttleCleanupTimer) return;
+  throttleCleanupTimer = setInterval(() => {
+    const now = Date.now();
+    for (const [key, bucket] of loginBuckets) {
+      if (now > bucket.resetAt) loginBuckets.delete(key);
+    }
+  }, THROTTLE_CLEANUP_INTERVAL_MS);
+  throttleCleanupTimer.unref();
+}
 
 function loginThrottleAllow(key: string, max: number, windowMs: number): boolean {
   const now = Date.now();
@@ -40,7 +63,23 @@ function loginThrottleAllow(key: string, max: number, windowMs: number): boolean
   return true;
 }
 
+const SESSION_PRUNE_INTERVAL_MS = 10 * 60_000;
+
+function startSessionPrune(): void {
+  const timer = setInterval(async () => {
+    try {
+      await prisma.session.deleteMany({ where: { expiresAt: { lt: new Date() } } });
+    } catch {
+      /* best-effort cleanup */
+    }
+  }, SESSION_PRUNE_INTERVAL_MS);
+  timer.unref();
+}
+
 const authRoutes: FastifyPluginAsync<{ secureCookie: boolean }> = async (app, opts) => {
+  startThrottleCleanup();
+  startSessionPrune();
+
   app.post("/register", async (request, reply) => {
     const parsed = registerSchema.safeParse(request.body);
     if (!parsed.success) {
@@ -93,7 +132,9 @@ const authRoutes: FastifyPluginAsync<{ secureCookie: boolean }> = async (app, op
       where: { email },
       include: { userRoles: { include: { role: true } } },
     });
-    const ok = user ? await verifyPassword(password, user.passwordHash) : false;
+    const ok = user
+      ? await verifyPassword(password, user.passwordHash)
+      : await dummyVerify().then(() => false);
     if (!user || !ok) {
       await writeAudit(request, {
         actorUserId: null,
@@ -106,9 +147,10 @@ const authRoutes: FastifyPluginAsync<{ secureCookie: boolean }> = async (app, op
     await prisma.session.deleteMany({ where: { userId: user.id } });
 
     const token = newSessionToken();
+    const tokenHash = hashSessionToken(token);
     const expiresAt = new Date(Date.now() + SESSION_MS);
     await prisma.session.create({
-      data: { token, userId: user.id, expiresAt },
+      data: { token: tokenHash, userId: user.id, expiresAt },
     });
 
     setSessionCookie(reply, token, SESSION_MAX_AGE_SEC, opts.secureCookie);
@@ -136,7 +178,8 @@ const authRoutes: FastifyPluginAsync<{ secureCookie: boolean }> = async (app, op
     async (request, reply) => {
       const token = (request as unknown as { _sessionToken?: string })._sessionToken;
       if (token) {
-        await prisma.session.deleteMany({ where: { token } });
+        const tokenHash = hashSessionToken(token);
+        await prisma.session.deleteMany({ where: { token: tokenHash } });
       }
       clearSessionCookie(reply);
       await writeAudit(request, {

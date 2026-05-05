@@ -13,12 +13,25 @@ import adminRoutes from "./routes/admin.js";
 export async function buildApp(config: Config): Promise<FastifyInstance> {
   const app = Fastify({
     logger: config.NODE_ENV !== "test",
-    trustProxy: true,
+    trustProxy: config.NODE_ENV === "production",
     bodyLimit: 512 * 1024,
   });
 
   await app.register(helmet, {
-    contentSecurityPolicy: false,
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'"],
+        styleSrc: ["'self'"],
+        imgSrc: ["'self'"],
+        connectSrc: ["'self'"],
+        fontSrc: ["'self'"],
+        objectSrc: ["'none'"],
+        frameAncestors: ["'none'"],
+        baseUri: ["'self'"],
+        formAction: ["'self'"],
+      },
+    },
   });
 
   await app.register(cors, {
@@ -48,9 +61,38 @@ export async function buildApp(config: Config): Promise<FastifyInstance> {
     { prefix: "/auth" },
   );
 
-  await app.register(documentRoutes, { prefix: "/api/documents" });
-  await app.register(auditRoutes, { prefix: "/api/audit" });
-  await app.register(adminRoutes, { prefix: "/api/admin" });
+  await app.register(
+    async (scope) => {
+      await scope.register(rateLimit, {
+        max: 120,
+        timeWindow: "1 minute",
+      });
+      await scope.register(documentRoutes);
+    },
+    { prefix: "/api/documents" },
+  );
+
+  await app.register(
+    async (scope) => {
+      await scope.register(rateLimit, {
+        max: 60,
+        timeWindow: "1 minute",
+      });
+      await scope.register(auditRoutes);
+    },
+    { prefix: "/api/audit" },
+  );
+
+  await app.register(
+    async (scope) => {
+      await scope.register(rateLimit, {
+        max: 30,
+        timeWindow: "1 minute",
+      });
+      await scope.register(adminRoutes);
+    },
+    { prefix: "/api/admin" },
+  );
 
   return app;
 }

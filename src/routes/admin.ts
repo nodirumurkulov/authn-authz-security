@@ -8,6 +8,10 @@ const assignRoleSchema = z.object({
   roleName: z.enum(["admin", "user", "auditor_readonly"]),
 });
 
+const userIdParamSchema = z.object({
+  userId: z.string().min(1).max(100),
+});
+
 const adminRoutes: FastifyPluginAsync = async (app) => {
   app.addHook("preHandler", requireAnyRole("admin"));
 
@@ -32,7 +36,11 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
   });
 
   app.post("/users/:userId/roles", async (request, reply) => {
-    const { userId } = request.params as { userId: string };
+    const paramsParsed = userIdParamSchema.safeParse(request.params);
+    if (!paramsParsed.success) {
+      return reply.code(400).send({ error: "Invalid parameters" });
+    }
+    const { userId } = paramsParsed.data;
     const parsed = assignRoleSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.code(400).send({ error: "Invalid input", details: parsed.error.flatten() });
