@@ -1,0 +1,36 @@
+{
+  "name": "secure-demo-app",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsx watch src/index.ts",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate dev",
+    "db:push": "prisma db push",
+    "db:seed": "node prisma/seed.cjs"
+  },
+  "dependencies": {
+    "@fastify/cookie": "^11.0.2",
+    "@fastify/cors": "^10.0.2",
+    "@fastify/helmet": "^12.0.1",
+    "@fastify/rate-limit": "^10.2.2",
+    "@prisma/client": "^6.7.0",
+    "argon2": "^0.41.1",
+    "dotenv": "^16.5.0",
+    "fastify": "^5.3.2",
+    "fastify-plugin": "^5.0.1",
+    "zod": "^3.24.4"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.3",
+    "prisma": "^6.7.0",
+    "tsx": "^4.19.4",
+    "typescript": "^5.8.3"
+  },
+  "prisma": {
+    "seed": "node prisma/seed.cjs"
+  }
+}
