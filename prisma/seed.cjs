@@ -1,7 +1,19 @@
 const { PrismaClient } = require("@prisma/client");
 const argon2 = require("argon2");
+require("dotenv/config");
 
 const prisma = new PrismaClient();
+
+function resolveSeedPassword(envName) {
+  const envValue = process.env[envName];
+  if (envValue && envValue.length >= 10) {
+    return envValue;
+  }
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(`${envName} is required in production and must be at least 10 characters.`);
+  }
+  return null;
+}
 
 async function main() {
   const roles = ["admin", "user", "auditor_readonly"];
@@ -22,22 +34,28 @@ async function main() {
   const users = [
     {
       email: "admin@example.com",
-      password: "AdminPass1!x",
+      password: resolveSeedPassword("SEED_ADMIN_PASSWORD"),
       roleIds: [adminRole.id, userRole.id],
     },
     {
       email: "user@example.com",
-      password: "UserPass1!x",
+      password: resolveSeedPassword("SEED_USER_PASSWORD"),
       roleIds: [userRole.id],
     },
     {
       email: "auditor@example.com",
-      password: "AuditPass1!x",
+      password: resolveSeedPassword("SEED_AUDITOR_PASSWORD"),
       roleIds: [auditorRole.id],
     },
   ];
 
   for (const u of users) {
+    if (!u.password) {
+      console.warn(
+        `[seed warning] Missing password env var for ${u.email}. User updated but password unchanged.`,
+      );
+      continue;
+    }
     const hash = await argon2.hash(u.password);
     const user = await prisma.user.upsert({
       where: { email: u.email },
