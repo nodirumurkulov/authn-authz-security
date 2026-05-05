@@ -3,6 +3,7 @@ import type { FastifyPluginAsync } from "fastify";
 import cookie from "@fastify/cookie";
 import { prisma } from "../prisma.js";
 import type { SessionUser } from "../types/fastify.js";
+import { hashSessionToken } from "../lib/sessionToken.js";
 
 const COOKIE_NAME = "sid";
 
@@ -25,8 +26,9 @@ const sessionPlugin: FastifyPluginAsync<{ secret: string }> = async (app, opts) 
     if (!unsigned.valid || !unsigned.value) return;
 
     const token = unsigned.value;
+    const tokenHash = hashSessionToken(token);
     const session = await prisma.session.findUnique({
-      where: { token },
+      where: { token: tokenHash },
       include: {
         user: {
           include: {

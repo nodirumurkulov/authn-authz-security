@@ -14,6 +14,10 @@ const updateDocSchema = z.object({
   body: z.string().max(50_000).optional(),
 });
 
+const idParamSchema = z.object({
+  id: z.string().min(1).max(100),
+});
+
 const documentRoutes: FastifyPluginAsync = async (app) => {
   app.addHook("preHandler", requireAuth());
 
@@ -48,7 +52,11 @@ const documentRoutes: FastifyPluginAsync = async (app) => {
   });
 
   app.get("/:id", async (request, reply) => {
-    const { id } = request.params as { id: string };
+    const paramsParsed = idParamSchema.safeParse(request.params);
+    if (!paramsParsed.success) {
+      return reply.code(400).send({ error: "Invalid parameters" });
+    }
+    const { id } = paramsParsed.data;
     const doc = await prisma.document.findUnique({ where: { id } });
     if (!doc) {
       return reply.code(404).send({ error: "Not found" });
@@ -61,7 +69,11 @@ const documentRoutes: FastifyPluginAsync = async (app) => {
   });
 
   app.patch("/:id", async (request, reply) => {
-    const { id } = request.params as { id: string };
+    const paramsParsed = idParamSchema.safeParse(request.params);
+    if (!paramsParsed.success) {
+      return reply.code(400).send({ error: "Invalid parameters" });
+    }
+    const { id } = paramsParsed.data;
     const parsed = updateDocSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.code(400).send({ error: "Invalid input", details: parsed.error.flatten() });
@@ -92,7 +104,11 @@ const documentRoutes: FastifyPluginAsync = async (app) => {
   });
 
   app.delete("/:id", async (request, reply) => {
-    const { id } = request.params as { id: string };
+    const paramsParsed = idParamSchema.safeParse(request.params);
+    if (!paramsParsed.success) {
+      return reply.code(400).send({ error: "Invalid parameters" });
+    }
+    const { id } = paramsParsed.data;
     const doc = await prisma.document.findUnique({ where: { id } });
     if (!doc) {
       return reply.code(404).send({ error: "Not found" });
