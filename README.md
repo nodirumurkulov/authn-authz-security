@@ -1,5 +1,3 @@
-# Secure demo app
-
 Small Fastify + Prisma (SQLite) API demonstrating authentication, server-side sessions, RBAC, rate limiting, input validation, audit logging, and basic secret handling.
 
 ## Prerequisites
