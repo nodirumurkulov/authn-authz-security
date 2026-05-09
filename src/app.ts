@@ -4,6 +4,7 @@ import cors from "@fastify/cors";
 import rateLimit from "@fastify/rate-limit";
 import type { Config } from "./config.js";
 import sessionPlugin from "./auth/sessionPlugin.js";
+import { requireCsrf } from "./auth/csrfGuard.js";
 import healthRoutes from "./routes/health.js";
 import authRoutes from "./routes/auth.js";
 import documentRoutes from "./routes/documents.js";
@@ -45,6 +46,8 @@ export async function buildApp(config: Config): Promise<FastifyInstance> {
   });
 
   await app.register(sessionPlugin, { secret: config.SESSION_SECRET });
+
+  app.addHook("preHandler", requireCsrf());
 
   await app.register(healthRoutes);
 
