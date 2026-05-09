@@ -19,7 +19,7 @@
 | Tampering           | Client changes `userId` in body to escalate       | Identity from session only; authorization uses `sessionUser.id` + roles |
 | Repudiation         | Admin denies assigning a role                       | `role_assigned` and other actions logged with actor, IP, UA, timestamp |
 | Information disclosure | Stack traces or user enumeration               | Generic errors on auth failures; no passwords in audit metadata |
-| Denial of service   | Credential stuffing, API flood                    | Global rate limit; `/auth` sub-limit; login throttle by IP+email |
+| Denial of service   | Credential stuffing, API flood                    | Global rate limit; `/auth` sub-limit; login throttle by IP+email; account lockout after 5 failed attempts (15 min) |
 | Elevation of privilege | User reads/writes another user’s document (IDOR) | Document routes check `doc.userId === sessionUser.id` unless `admin` |
 
 ## Focused abuse cases (recommended tests)
@@ -45,6 +45,16 @@
 **Scenario:** High volume of `POST /auth/login` with password guesses.
 
 **Expected:** 429 from global/`/auth` limiters and/or login-specific throttle; `login_rate_limited` audit event.
+
+### 4. Account lockout – distributed brute force
+
+**Scenario:** Attacker targets a single account from many IPs to bypass IP-based rate limiting.
+
+**Expected:** After 5 consecutive failed login attempts, the account is locked for 15 minutes regardless of source IP. The server returns HTTP 423 with a generic message. A `dummyVerify()` call runs even for locked accounts to prevent timing side-channel leakage of lock state.
+
+**Admin remediation:** `POST /api/admin/users/:userId/unlock` resets the counter and lock. The `account_locked` and `account_unlocked` audit events track the lifecycle.
+
+**How to test:** Send 5 incorrect password attempts for a valid email, then attempt a correct login — expect 423. Use the admin unlock endpoint, then login — expect 200.
 
 ## Out of scope (for this demo)
 

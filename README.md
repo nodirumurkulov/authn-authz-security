@@ -75,8 +75,9 @@ Regular users can only access their own documents; `admin` can access all.
 
 ### Admin / audit
 
-- `GET /api/admin/users` - list users (`admin` only)
+- `GET /api/admin/users` - list users with lockout status (`admin` only)
 - `POST /api/admin/users/:userId/roles` - assign role (`admin` only)
+- `POST /api/admin/users/:userId/unlock` - unlock a locked account (`admin` only)
 - `GET /api/audit/events` - read audit events (`admin` or `auditor_readonly`)
 
 ## Example: login with curl
@@ -98,6 +99,8 @@ curl -s -b cookies.txt http://localhost:3000/auth/me
 - signed `httpOnly` cookie, `SameSite=Lax`, `Secure` in production
 - RBAC middleware and object-level checks (IDOR protection)
 - Zod request validation
+- account lockout after 5 failed login attempts (15 min cooldown)
+- admin unlock endpoint for locked accounts
 - global + auth route rate limiting
 - security headers via `@fastify/helmet`
 - audit logs for login, password, role, and document actions
@@ -133,6 +136,6 @@ See [THREAT_MODEL.md](THREAT_MODEL.md).
 ## Next roadmap
 
 - Add MFA or step-up auth for sensitive actions
-- Add account lockout and optional captcha on repeated login failures
+- ~~Add account lockout and optional captcha on repeated login failures~~ ✔️ (lockout implemented)
 - Add refresh-token style session rotation policy for longer-lived sessions
 - Move from SQLite to PostgreSQL for multi-user concurrency
