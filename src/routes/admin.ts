@@ -72,8 +72,17 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
       action: "role_assigned",
       resourceType: "User",
       resourceId: userId,
-      metadata: { roleName, targetEmail: target.email, sessionsInvalidated: invalidated },
+      metadata: { roleName, targetEmail: target.email },
     });
+    if (invalidated > 0) {
+      await writeAudit(request, {
+        actorUserId: request.sessionUser!.id,
+        action: "sessions_invalidated",
+        resourceType: "User",
+        resourceId: userId,
+        metadata: { reason: "role_assigned", count: invalidated, targetEmail: target.email },
+      });
+    }
     return { ok: true, sessionsInvalidated: invalidated };
   });
 
@@ -112,8 +121,17 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
       action: "role_revoked",
       resourceType: "User",
       resourceId: userId,
-      metadata: { roleName, targetEmail: target.email, sessionsInvalidated: invalidated },
+      metadata: { roleName, targetEmail: target.email },
     });
+    if (invalidated > 0) {
+      await writeAudit(request, {
+        actorUserId: request.sessionUser!.id,
+        action: "sessions_invalidated",
+        resourceType: "User",
+        resourceId: userId,
+        metadata: { reason: "role_revoked", count: invalidated, targetEmail: target.email },
+      });
+    }
     return { ok: true, sessionsInvalidated: invalidated };
   });
 
@@ -144,9 +162,17 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
       metadata: {
         targetEmail: target.email,
         previousFailedAttempts: target.failedLoginAttempts,
-        sessionsInvalidated: invalidated,
       },
     });
+    if (invalidated > 0) {
+      await writeAudit(request, {
+        actorUserId: request.sessionUser!.id,
+        action: "sessions_invalidated",
+        resourceType: "User",
+        resourceId: userId,
+        metadata: { reason: "account_unlocked", count: invalidated, targetEmail: target.email },
+      });
+    }
     return { ok: true, message: `Account ${target.email} unlocked`, sessionsInvalidated: invalidated };
   });
 };
