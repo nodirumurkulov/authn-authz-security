@@ -111,10 +111,12 @@ describe("Auth/session security", () => {
       headers: { cookie },
     });
     expect(me.statusCode).toBe(200);
-    expect(me.json()).toMatchObject({
+    const body = me.json();
+    expect(body).toMatchObject({
       email: "user@example.com",
       roles: ["user"],
     });
+    expect(body.sessionRotatedAt).toBeNull();
   });
 
   it("rejects invalid credentials", async () => {
