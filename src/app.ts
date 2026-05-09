@@ -47,6 +47,8 @@ export async function buildApp(config: Config): Promise<FastifyInstance> {
 
   await app.register(sessionPlugin, { secret: config.SESSION_SECRET });
 
+  app.decorate("secureCookie", config.NODE_ENV === "production");
+
   app.addHook("preHandler", requireCsrf());
 
   await app.register(healthRoutes);
