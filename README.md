@@ -62,7 +62,7 @@ Do not use demo credentials in production.
 - `POST /auth/logout` - logout and clear session cookie (auth required)
 - `GET /auth/csrf-token` - retrieve CSRF token for current session (auth required)
 - `GET /auth/me` - current user and roles (auth required)
-- `PATCH /auth/password` - change password, revoke all sessions (auth required)
+- `PATCH /auth/password` - change password, rotate session (auth required)
 
 ### Documents (protected)
 
@@ -77,8 +77,9 @@ Regular users can only access their own documents; `admin` can access all.
 ### Admin / audit
 
 - `GET /api/admin/users` - list users with lockout status (`admin` only)
-- `POST /api/admin/users/:userId/roles` - assign role (`admin` only)
-- `POST /api/admin/users/:userId/unlock` - unlock a locked account (`admin` only)
+- `POST /api/admin/users/:userId/roles` - assign role, invalidates target sessions (`admin` only)
+- `DELETE /api/admin/users/:userId/roles` - revoke role, invalidates target sessions (`admin` only)
+- `POST /api/admin/users/:userId/unlock` - unlock a locked account, invalidates target sessions (`admin` only)
 - `GET /api/audit/events` - read audit events (`admin` or `auditor_readonly`)
 
 ## Example: login with curl
@@ -114,7 +115,8 @@ curl -s -b cookies.txt -H "Content-Type: application/json" \
 - admin unlock endpoint for locked accounts
 - global + auth route rate limiting
 - security headers via `@fastify/helmet`
-- audit logs for login, password, role, and document actions
+- session rotation on privilege changes (password change, role assignment/revocation, unlock)
+- audit logs for login, password, role, session rotation, and document actions
 
 ## Environment variables
 
@@ -148,5 +150,5 @@ See [THREAT_MODEL.md](THREAT_MODEL.md).
 
 - Add MFA or step-up auth for sensitive actions
 - ~~Add account lockout and optional captcha on repeated login failures~~ ✔️ (lockout implemented)
-- Add refresh-token style session rotation policy for longer-lived sessions
+- ~~Add session rotation on privilege change~~ ✔️ (implemented)
 - Move from SQLite to PostgreSQL for multi-user concurrency
