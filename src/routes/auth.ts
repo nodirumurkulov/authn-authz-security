@@ -10,6 +10,9 @@ import { clearSessionCookie, setSessionCookie } from "../auth/sessionPlugin.js";
 const SESSION_MS = 24 * 60 * 60 * 1000;
 const SESSION_MAX_AGE_SEC = Math.floor(SESSION_MS / 1000);
 
+const MAX_FAILED_ATTEMPTS = 5;
+const LOCKOUT_DURATION_MS = 15 * 60 * 1000;
+
 const passwordPolicy = z
   .string()
   .min(10)
@@ -132,16 +135,59 @@ const authRoutes: FastifyPluginAsync<{ secureCookie: boolean }> = async (app, op
       where: { email },
       include: { userRoles: { include: { role: true } } },
     });
+
+    if (user && user.lockedUntil && user.lockedUntil > new Date()) {
+      await dummyVerify();
+      await writeAudit(request, {
+        actorUserId: user.id,
+        action: "login_locked",
+        resourceType: "User",
+        resourceId: user.id,
+        metadata: { email, lockedUntil: user.lockedUntil.toISOString() },
+      });
+      return reply.code(423).send({
+        error: "Account locked",
+        message: "Too many failed login attempts. Try again later.",
+      });
+    }
+
     const ok = user
       ? await verifyPassword(password, user.passwordHash)
       : await dummyVerify().then(() => false);
     if (!user || !ok) {
+      if (user) {
+        const newCount = user.failedLoginAttempts + 1;
+        const lockout =
+          newCount >= MAX_FAILED_ATTEMPTS
+            ? { lockedUntil: new Date(Date.now() + LOCKOUT_DURATION_MS) }
+            : {};
+        await prisma.user.update({
+          where: { id: user.id },
+          data: { failedLoginAttempts: newCount, ...lockout },
+        });
+        if (newCount >= MAX_FAILED_ATTEMPTS) {
+          await writeAudit(request, {
+            actorUserId: user.id,
+            action: "account_locked",
+            resourceType: "User",
+            resourceId: user.id,
+            metadata: { email, failedAttempts: newCount },
+          });
+        }
+      }
       await writeAudit(request, {
-        actorUserId: null,
+        actorUserId: user?.id ?? null,
         action: "login_failure",
         metadata: { email },
       });
       return reply.code(401).send({ error: "Invalid credentials" });
+    }
+
+    if (user.failedLoginAttempts > 0) {
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { failedLoginAttempts: 0, lockedUntil: null },
+      });
     }
 
     await prisma.session.deleteMany({ where: { userId: user.id } });
