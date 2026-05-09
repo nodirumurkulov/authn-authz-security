@@ -36,13 +36,14 @@ model UserRole {
 }
 
 model Session {
-  id        String   @id @default(cuid())
-  token     String   @unique
-  csrfToken String   @default("")
+  id        String    @id @default(cuid())
+  token     String    @unique
+  csrfToken String    @default("")
   userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   expiresAt DateTime
-  createdAt DateTime @default(now())
+  createdAt DateTime  @default(now())
+  rotatedAt DateTime?
 }
 
 model Document {

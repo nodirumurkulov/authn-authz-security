@@ -52,6 +52,7 @@ const sessionPlugin: FastifyPluginAsync<{ secret: string }> = async (app, opts) 
     request.sessionUser = sessionUser;
     (request as unknown as { _sessionToken?: string })._sessionToken = token;
     (request as unknown as { _csrfToken?: string })._csrfToken = session.csrfToken;
+    (request as unknown as { _sessionRotatedAt?: Date | null })._sessionRotatedAt = session.rotatedAt;
   });
 };
 

@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "../prisma.js";
 import { requireAnyRole } from "../auth/guards.js";
 import { writeAudit } from "../lib/audit.js";
+import { invalidateUserSessions } from "../lib/sessionRotation.js";
 
 const assignRoleSchema = z.object({
   roleName: z.enum(["admin", "user", "auditor_readonly"]),
@@ -64,6 +65,8 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
       create: { userId, roleId: role.id },
       update: {},
     });
+    const invalidated = await invalidateUserSessions(userId);
+
     await writeAudit(request, {
       actorUserId: request.sessionUser!.id,
       action: "role_assigned",
@@ -71,7 +74,65 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
       resourceId: userId,
       metadata: { roleName, targetEmail: target.email },
     });
-    return { ok: true };
+    if (invalidated > 0) {
+      await writeAudit(request, {
+        actorUserId: request.sessionUser!.id,
+        action: "sessions_invalidated",
+        resourceType: "User",
+        resourceId: userId,
+        metadata: { reason: "role_assigned", count: invalidated, targetEmail: target.email },
+      });
+    }
+    return { ok: true, sessionsInvalidated: invalidated };
+  });
+
+  app.delete("/users/:userId/roles", async (request, reply) => {
+    const paramsParsed = userIdParamSchema.safeParse(request.params);
+    if (!paramsParsed.success) {
+      return reply.code(400).send({ error: "Invalid parameters" });
+    }
+    const { userId } = paramsParsed.data;
+    const parsed = assignRoleSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: "Invalid input", details: parsed.error.flatten() });
+    }
+    const { roleName } = parsed.data;
+    const target = await prisma.user.findUnique({ where: { id: userId } });
+    if (!target) {
+      return reply.code(404).send({ error: "Not found" });
+    }
+    const role = await prisma.role.findUnique({ where: { name: roleName } });
+    if (!role) {
+      return reply.code(500).send({ error: "Server misconfiguration" });
+    }
+    const existing = await prisma.userRole.findUnique({
+      where: { userId_roleId: { userId, roleId: role.id } },
+    });
+    if (!existing) {
+      return reply.code(404).send({ error: "User does not have this role" });
+    }
+    await prisma.userRole.delete({
+      where: { userId_roleId: { userId, roleId: role.id } },
+    });
+    const invalidated = await invalidateUserSessions(userId);
+
+    await writeAudit(request, {
+      actorUserId: request.sessionUser!.id,
+      action: "role_revoked",
+      resourceType: "User",
+      resourceId: userId,
+      metadata: { roleName, targetEmail: target.email },
+    });
+    if (invalidated > 0) {
+      await writeAudit(request, {
+        actorUserId: request.sessionUser!.id,
+        action: "sessions_invalidated",
+        resourceType: "User",
+        resourceId: userId,
+        metadata: { reason: "role_revoked", count: invalidated, targetEmail: target.email },
+      });
+    }
+    return { ok: true, sessionsInvalidated: invalidated };
   });
 
   app.post("/users/:userId/unlock", async (request, reply) => {
@@ -91,6 +152,8 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
       where: { id: userId },
       data: { failedLoginAttempts: 0, lockedUntil: null },
     });
+    const invalidated = await invalidateUserSessions(userId);
+
     await writeAudit(request, {
       actorUserId: request.sessionUser!.id,
       action: "account_unlocked",
@@ -101,7 +164,16 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
         previousFailedAttempts: target.failedLoginAttempts,
       },
     });
-    return { ok: true, message: `Account ${target.email} unlocked` };
+    if (invalidated > 0) {
+      await writeAudit(request, {
+        actorUserId: request.sessionUser!.id,
+        action: "sessions_invalidated",
+        resourceType: "User",
+        resourceId: userId,
+        metadata: { reason: "account_unlocked", count: invalidated, targetEmail: target.email },
+      });
+    }
+    return { ok: true, message: `Account ${target.email} unlocked`, sessionsInvalidated: invalidated };
   });
 };
 

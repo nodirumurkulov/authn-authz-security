@@ -6,6 +6,10 @@ export type SessionUser = {
 };
 
 declare module "fastify" {
+  interface FastifyInstance {
+    secureCookie: boolean;
+  }
+
   interface FastifyRequest {
     sessionUser: SessionUser | null;
   }

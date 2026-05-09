@@ -38,7 +38,7 @@
 
 **Expected:** Full account access until expiry or logout; new login from legitimate user invalidates older sessions (reduces concurrent abuse). Production should enforce HTTPS (`secure` cookie) and short session TTL if threat model requires it.
 
-**Mitigations present:** `httpOnly`, `sameSite=lax`, session invalidation on password change and on re-login.
+**Mitigations present:** `httpOnly`, `sameSite=lax`, session invalidation on password change and on re-login, session rotation on privilege changes (role assignment/revocation, account unlock).
 
 ### 3. Brute force and credential stuffing
 
@@ -70,6 +70,22 @@
 - `SameSite=Lax` cookie attribute provides defense-in-depth
 
 **How to test:** Log in, attempt a POST to `/api/documents` without the `x-csrf-token` header — expect 403. Send the same request with a wrong token — expect 403. Send with the correct token from login response — expect 201.
+
+### 6. Stale session after privilege change
+
+**Scenario:** Admin promotes a user to `admin` role, or revokes an elevated role. The user has an active session that still carries the old role set, allowing them to continue accessing resources with stale (elevated or insufficient) privileges.
+
+**Expected:** All of the target user's sessions are immediately invalidated. The user must re-authenticate to obtain a session with the updated role set.
+
+**Mitigations present:**
+- Role assignment (`POST /api/admin/users/:userId/roles`) invalidates all target user sessions
+- Role revocation (`DELETE /api/admin/users/:userId/roles`) invalidates all target user sessions
+- Account unlock (`POST /api/admin/users/:userId/unlock`) invalidates all target user sessions
+- Password change (`PATCH /auth/password`) rotates the caller's own session (new token + new CSRF token)
+- `session_rotated` and `sessions_invalidated` audit events track all session lifecycle changes
+- Admin's own session is unaffected when modifying other users
+
+**How to test:** Log in as a regular user, then have an admin assign a new role to that user. Verify the user's session returns 401 on the next request. The user must re-login to see the new role.
 
 ## Out of scope (for this demo)
 

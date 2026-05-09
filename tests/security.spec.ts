@@ -7,6 +7,7 @@ const DATABASE_URL = "file:./test.db";
 let app: FastifyInstance;
 let prisma: PrismaClient;
 let userDocumentId: string;
+let targetUserId: string;
 let hashPassword: (plain: string) => Promise<string>;
 
 async function login(
@@ -67,6 +68,7 @@ beforeAll(async () => {
       passwordHash: await hashPassword("OtherPass1!x"),
     },
   });
+  targetUserId = secondUser.id;
 
   await prisma.userRole.createMany({
     data: [
@@ -111,10 +113,12 @@ describe("Auth/session security", () => {
       headers: { cookie },
     });
     expect(me.statusCode).toBe(200);
-    expect(me.json()).toMatchObject({
+    const body = me.json();
+    expect(body).toMatchObject({
       email: "user@example.com",
       roles: ["user"],
     });
+    expect(body.sessionRotatedAt).toBeNull();
   });
 
   it("rejects invalid credentials", async () => {
@@ -206,5 +210,124 @@ describe("CSRF protection", () => {
     });
     expect(res.statusCode).toBe(201);
     expect(res.json().title).toBe("CSRF-protected doc");
+  });
+});
+
+describe("Session rotation on password change", () => {
+  it("rotates session and returns new CSRF token on password change", async () => {
+    const reg = await app.inject({
+      method: "POST",
+      url: "/auth/register",
+      payload: { email: "rotate-test@example.com", password: "OldPassword1!x" },
+    });
+    expect(reg.statusCode).toBe(201);
+
+    const { cookie, csrfToken } = await login("rotate-test@example.com", "OldPassword1!x");
+
+    const changeRes = await app.inject({
+      method: "PATCH",
+      url: "/auth/password",
+      headers: { cookie, "x-csrf-token": csrfToken },
+      payload: { currentPassword: "OldPassword1!x", newPassword: "NewPassword1!x" },
+    });
+    expect(changeRes.statusCode).toBe(200);
+    const body = changeRes.json();
+    expect(body.ok).toBe(true);
+    expect(body.csrfToken).toBeTruthy();
+    expect(body.csrfToken).not.toBe(csrfToken);
+
+    const newCookie = changeRes.cookies.find((c) => c.name === "sid")?.value;
+    expect(newCookie).toBeTruthy();
+
+    const me = await app.inject({
+      method: "GET",
+      url: "/auth/me",
+      headers: { cookie: `sid=${newCookie}` },
+    });
+    expect(me.statusCode).toBe(200);
+    const meBody = me.json();
+    expect(meBody.email).toBe("rotate-test@example.com");
+    expect(meBody.sessionRotatedAt).toBeTruthy();
+  });
+
+  it("old session is invalid after password change rotation", async () => {
+    const { cookie, csrfToken } = await login("rotate-test@example.com", "NewPassword1!x");
+
+    await app.inject({
+      method: "PATCH",
+      url: "/auth/password",
+      headers: { cookie, "x-csrf-token": csrfToken },
+      payload: { currentPassword: "NewPassword1!x", newPassword: "FinalPassword1!x" },
+    });
+
+    const me = await app.inject({
+      method: "GET",
+      url: "/auth/me",
+      headers: { cookie },
+    });
+    expect(me.statusCode).toBe(401);
+  });
+});
+
+describe("Session invalidation on privilege change", () => {
+  it("invalidates target user session when admin assigns a role", async () => {
+    const targetSession = await login("other@example.com", "OtherPass1!x");
+    const adminSession = await login("admin@example.com", "AdminPass1!x");
+
+    const assignRes = await app.inject({
+      method: "POST",
+      url: `/api/admin/users/${targetUserId}/roles`,
+      headers: { cookie: adminSession.cookie, "x-csrf-token": adminSession.csrfToken },
+      payload: { roleName: "admin" },
+    });
+    expect(assignRes.statusCode).toBe(200);
+    expect(assignRes.json().sessionsInvalidated).toBeGreaterThanOrEqual(1);
+
+    const me = await app.inject({
+      method: "GET",
+      url: "/auth/me",
+      headers: { cookie: targetSession.cookie },
+    });
+    expect(me.statusCode).toBe(401);
+  });
+
+  it("invalidates target user session when admin revokes a role", async () => {
+    const targetSession = await login("other@example.com", "OtherPass1!x");
+    const adminSession = await login("admin@example.com", "AdminPass1!x");
+
+    const revokeRes = await app.inject({
+      method: "DELETE",
+      url: `/api/admin/users/${targetUserId}/roles`,
+      headers: { cookie: adminSession.cookie, "x-csrf-token": adminSession.csrfToken },
+      payload: { roleName: "admin" },
+    });
+    expect(revokeRes.statusCode).toBe(200);
+    expect(revokeRes.json().sessionsInvalidated).toBeGreaterThanOrEqual(1);
+
+    const me = await app.inject({
+      method: "GET",
+      url: "/auth/me",
+      headers: { cookie: targetSession.cookie },
+    });
+    expect(me.statusCode).toBe(401);
+  });
+
+  it("admin session remains valid after modifying another user", async () => {
+    const adminSession = await login("admin@example.com", "AdminPass1!x");
+
+    await app.inject({
+      method: "POST",
+      url: `/api/admin/users/${targetUserId}/roles`,
+      headers: { cookie: adminSession.cookie, "x-csrf-token": adminSession.csrfToken },
+      payload: { roleName: "auditor_readonly" },
+    });
+
+    const me = await app.inject({
+      method: "GET",
+      url: "/auth/me",
+      headers: { cookie: adminSession.cookie },
+    });
+    expect(me.statusCode).toBe(200);
+    expect(me.json().email).toBe("admin@example.com");
   });
 });
