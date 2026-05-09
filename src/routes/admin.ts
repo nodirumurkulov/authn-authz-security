@@ -105,14 +105,16 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
     await prisma.userRole.delete({
       where: { userId_roleId: { userId, roleId: role.id } },
     });
+    const invalidated = await invalidateUserSessions(userId);
+
     await writeAudit(request, {
       actorUserId: request.sessionUser!.id,
       action: "role_revoked",
       resourceType: "User",
       resourceId: userId,
-      metadata: { roleName, targetEmail: target.email },
+      metadata: { roleName, targetEmail: target.email, sessionsInvalidated: invalidated },
     });
-    return { ok: true };
+    return { ok: true, sessionsInvalidated: invalidated };
   });
 
   app.post("/users/:userId/unlock", async (request, reply) => {
