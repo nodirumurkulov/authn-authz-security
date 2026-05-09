@@ -249,10 +249,12 @@ const authRoutes: FastifyPluginAsync<{ secureCookie: boolean }> = async (app, op
 
   app.get("/me", { preHandler: requireAuth() }, async (request) => {
     const u = request.sessionUser!;
+    const rotatedAt = (request as unknown as { _sessionRotatedAt?: Date | null })._sessionRotatedAt;
     return {
       id: u.id,
       email: u.email,
       roles: u.roles.map((r) => r.name),
+      sessionRotatedAt: rotatedAt ?? null,
     };
   });
 
