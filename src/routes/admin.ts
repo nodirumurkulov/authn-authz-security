@@ -22,6 +22,8 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
         id: true,
         email: true,
         createdAt: true,
+        failedLoginAttempts: true,
+        lockedUntil: true,
         userRoles: { select: { role: { select: { name: true } } } },
       },
     });
@@ -31,6 +33,9 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
         email: u.email,
         createdAt: u.createdAt,
         roles: u.userRoles.map((ur) => ur.role.name),
+        failedLoginAttempts: u.failedLoginAttempts,
+        locked: u.lockedUntil ? u.lockedUntil > new Date() : false,
+        lockedUntil: u.lockedUntil,
       })),
     };
   });
@@ -67,6 +72,36 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
       metadata: { roleName, targetEmail: target.email },
     });
     return { ok: true };
+  });
+
+  app.post("/users/:userId/unlock", async (request, reply) => {
+    const paramsParsed = userIdParamSchema.safeParse(request.params);
+    if (!paramsParsed.success) {
+      return reply.code(400).send({ error: "Invalid parameters" });
+    }
+    const { userId } = paramsParsed.data;
+    const target = await prisma.user.findUnique({ where: { id: userId } });
+    if (!target) {
+      return reply.code(404).send({ error: "Not found" });
+    }
+    if (target.failedLoginAttempts === 0 && !target.lockedUntil) {
+      return reply.code(400).send({ error: "Account is not locked" });
+    }
+    await prisma.user.update({
+      where: { id: userId },
+      data: { failedLoginAttempts: 0, lockedUntil: null },
+    });
+    await writeAudit(request, {
+      actorUserId: request.sessionUser!.id,
+      action: "account_unlocked",
+      resourceType: "User",
+      resourceId: userId,
+      metadata: {
+        targetEmail: target.email,
+        previousFailedAttempts: target.failedLoginAttempts,
+      },
+    });
+    return { ok: true, message: `Account ${target.email} unlocked` };
   });
 };
 
