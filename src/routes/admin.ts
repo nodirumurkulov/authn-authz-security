@@ -74,6 +74,44 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
     return { ok: true };
   });
 
+  app.delete("/users/:userId/roles", async (request, reply) => {
+    const paramsParsed = userIdParamSchema.safeParse(request.params);
+    if (!paramsParsed.success) {
+      return reply.code(400).send({ error: "Invalid parameters" });
+    }
+    const { userId } = paramsParsed.data;
+    const parsed = assignRoleSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: "Invalid input", details: parsed.error.flatten() });
+    }
+    const { roleName } = parsed.data;
+    const target = await prisma.user.findUnique({ where: { id: userId } });
+    if (!target) {
+      return reply.code(404).send({ error: "Not found" });
+    }
+    const role = await prisma.role.findUnique({ where: { name: roleName } });
+    if (!role) {
+      return reply.code(500).send({ error: "Server misconfiguration" });
+    }
+    const existing = await prisma.userRole.findUnique({
+      where: { userId_roleId: { userId, roleId: role.id } },
+    });
+    if (!existing) {
+      return reply.code(404).send({ error: "User does not have this role" });
+    }
+    await prisma.userRole.delete({
+      where: { userId_roleId: { userId, roleId: role.id } },
+    });
+    await writeAudit(request, {
+      actorUserId: request.sessionUser!.id,
+      action: "role_revoked",
+      resourceType: "User",
+      resourceId: userId,
+      metadata: { roleName, targetEmail: target.email },
+    });
+    return { ok: true };
+  });
+
   app.post("/users/:userId/unlock", async (request, reply) => {
     const paramsParsed = userIdParamSchema.safeParse(request.params);
     if (!paramsParsed.success) {
