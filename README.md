@@ -145,10 +145,3 @@ See [THREAT_MODEL.md](THREAT_MODEL.md).
 
 - Step-by-step live demo script: [`docs/DEMO_WALKTHROUGH.md`](docs/DEMO_WALKTHROUGH.md)
 - Architecture + security control mapping: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
-
-## Next roadmap
-
-- Add MFA or step-up auth for sensitive actions
-- ~~Add account lockout and optional captcha on repeated login failures~~ ✔️ (lockout implemented)
-- ~~Add session rotation on privilege change~~ ✔️ (implemented)
-- Move from SQLite to PostgreSQL for multi-user concurrency
