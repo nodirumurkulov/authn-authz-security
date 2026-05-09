@@ -60,6 +60,7 @@ Do not use demo credentials in production.
 - `POST /auth/register` - create a new user (default role `user`)
 - `POST /auth/login` - login and set signed `httpOnly` cookie (`sid`)
 - `POST /auth/logout` - logout and clear session cookie (auth required)
+- `GET /auth/csrf-token` - retrieve CSRF token for current session (auth required)
 - `GET /auth/me` - current user and roles (auth required)
 - `PATCH /auth/password` - change password, revoke all sessions (auth required)
 
@@ -85,11 +86,20 @@ Regular users can only access their own documents; `admin` can access all.
 Use a cookie-aware client (browser, Postman, or curl with cookie file):
 
 ```bash
+# Login (returns csrfToken in response body)
 curl -s -c cookies.txt -H "Content-Type: application/json" \
   -d '{"email":"user@example.com","password":"'"$SEED_USER_PASSWORD"'"}' \
   http://localhost:3000/auth/login
 
+# Read profile (GET — no CSRF token needed)
 curl -s -b cookies.txt http://localhost:3000/auth/me
+
+# Create document (POST — CSRF token required)
+CSRF=$(curl -s -b cookies.txt http://localhost:3000/auth/csrf-token | jq -r .csrfToken)
+curl -s -b cookies.txt -H "Content-Type: application/json" \
+  -H "x-csrf-token: $CSRF" \
+  -d '{"title":"My doc"}' \
+  http://localhost:3000/api/documents
 ```
 
 ## Security features included
@@ -99,6 +109,7 @@ curl -s -b cookies.txt http://localhost:3000/auth/me
 - signed `httpOnly` cookie, `SameSite=Lax`, `Secure` in production
 - RBAC middleware and object-level checks (IDOR protection)
 - Zod request validation
+- CSRF protection via per-session synchronizer token (`x-csrf-token` header)
 - account lockout after 5 failed login attempts (15 min cooldown)
 - admin unlock endpoint for locked accounts
 - global + auth route rate limiting

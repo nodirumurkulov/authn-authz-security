@@ -16,7 +16,7 @@
 | Category            | Threat example                                      | Mitigations in this codebase |
 |---------------------|-----------------------------------------------------|------------------------------|
 | Spoofing            | Forged session cookie                               | Random 256-bit token; cookie signed with server secret; lookup only on server |
-| Tampering           | Client changes `userId` in body to escalate       | Identity from session only; authorization uses `sessionUser.id` + roles |
+| Tampering           | Client changes `userId` in body to escalate; CSRF | Identity from session only; authorization uses `sessionUser.id` + roles; per-session CSRF token validated on state-changing requests |
 | Repudiation         | Admin denies assigning a role                       | `role_assigned` and other actions logged with actor, IP, UA, timestamp |
 | Information disclosure | Stack traces or user enumeration               | Generic errors on auth failures; no passwords in audit metadata |
 | Denial of service   | Credential stuffing, API flood                    | Global rate limit; `/auth` sub-limit; login throttle by IP+email; account lockout after 5 failed attempts (15 min) |
@@ -55,6 +55,21 @@
 **Admin remediation:** `POST /api/admin/users/:userId/unlock` resets the counter and lock. The `account_locked` and `account_unlocked` audit events track the lifecycle.
 
 **How to test:** Send 5 incorrect password attempts for a valid email, then attempt a correct login — expect 423. Use the admin unlock endpoint, then login — expect 200.
+
+### 5. Cross-site request forgery (CSRF)
+
+**Scenario:** Attacker tricks an authenticated user into submitting a forged request (e.g. via a hidden form on a malicious site) to a state-changing endpoint like `POST /api/documents` or `POST /api/admin/users/:userId/roles`.
+
+**Expected:** HTTP 403 — the request is blocked because it lacks a valid `x-csrf-token` header. Even if the browser attaches the `sid` cookie automatically, the attacker cannot read or forge the CSRF token.
+
+**Mitigations present:**
+- Per-session CSRF token generated on login, stored server-side in the Session table
+- All POST/PATCH/PUT/DELETE requests for authenticated users require `x-csrf-token` header
+- Constant-time token comparison prevents timing side-channel attacks
+- Login and register endpoints are exempt (they establish sessions, not consume them)
+- `SameSite=Lax` cookie attribute provides defense-in-depth
+
+**How to test:** Log in, attempt a POST to `/api/documents` without the `x-csrf-token` header — expect 403. Send the same request with a wrong token — expect 403. Send with the correct token from login response — expect 201.
 
 ## Out of scope (for this demo)
 

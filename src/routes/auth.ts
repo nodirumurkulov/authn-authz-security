@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "../prisma.js";
 import { hashPassword, verifyPassword, dummyVerify } from "../lib/password.js";
 import { newSessionToken, hashSessionToken } from "../lib/sessionToken.js";
+import { newCsrfToken } from "../lib/csrf.js";
 import { writeAudit } from "../lib/audit.js";
 import { requireAuth } from "../auth/guards.js";
 import { clearSessionCookie, setSessionCookie } from "../auth/sessionPlugin.js";
@@ -194,9 +195,10 @@ const authRoutes: FastifyPluginAsync<{ secureCookie: boolean }> = async (app, op
 
     const token = newSessionToken();
     const tokenHash = hashSessionToken(token);
+    const csrfToken = newCsrfToken();
     const expiresAt = new Date(Date.now() + SESSION_MS);
     await prisma.session.create({
-      data: { token: tokenHash, userId: user.id, expiresAt },
+      data: { token: tokenHash, csrfToken, userId: user.id, expiresAt },
     });
 
     setSessionCookie(reply, token, SESSION_MAX_AGE_SEC, opts.secureCookie);
@@ -215,6 +217,7 @@ const authRoutes: FastifyPluginAsync<{ secureCookie: boolean }> = async (app, op
         email: user.email,
         roles: user.userRoles.map((ur) => ur.role.name),
       },
+      csrfToken,
     };
   });
 
@@ -237,6 +240,11 @@ const authRoutes: FastifyPluginAsync<{ secureCookie: boolean }> = async (app, op
       return { ok: true };
     },
   );
+
+  app.get("/csrf-token", { preHandler: requireAuth() }, async (request) => {
+    const csrfToken = (request as unknown as { _csrfToken?: string })._csrfToken;
+    return { csrfToken: csrfToken ?? "" };
+  });
 
   app.get("/me", { preHandler: requireAuth() }, async (request) => {
     const u = request.sessionUser!;
