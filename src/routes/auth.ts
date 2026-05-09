@@ -292,6 +292,13 @@ const authRoutes: FastifyPluginAsync<{ secureCookie: boolean }> = async (app, op
         resourceType: "User",
         resourceId: full.id,
       });
+      await writeAudit(request, {
+        actorUserId: full.id,
+        action: "session_rotated",
+        resourceType: "Session",
+        resourceId: full.id,
+        metadata: { reason: "password_change" },
+      });
       return {
         ok: true,
         message: "Password updated; session rotated.",
