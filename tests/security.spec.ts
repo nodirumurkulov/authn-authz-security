@@ -9,7 +9,10 @@ let prisma: PrismaClient;
 let userDocumentId: string;
 let hashPassword: (plain: string) => Promise<string>;
 
-async function login(email: string, password: string): Promise<string> {
+async function login(
+  email: string,
+  password: string,
+): Promise<{ cookie: string; csrfToken: string }> {
   const res = await app.inject({
     method: "POST",
     url: "/auth/login",
@@ -18,7 +21,8 @@ async function login(email: string, password: string): Promise<string> {
   expect(res.statusCode).toBe(200);
   const cookie = res.cookies.find((c) => c.name === "sid")?.value;
   expect(cookie).toBeTruthy();
-  return `sid=${cookie}`;
+  const body = res.json();
+  return { cookie: `sid=${cookie}`, csrfToken: body.csrfToken };
 }
 
 beforeAll(async () => {
@@ -99,12 +103,12 @@ afterAll(async () => {
 
 describe("Auth/session security", () => {
   it("logs in and returns session-bound user profile", async () => {
-    const sidCookie = await login("user@example.com", "UserPass1!x");
+    const { cookie } = await login("user@example.com", "UserPass1!x");
 
     const me = await app.inject({
       method: "GET",
       url: "/auth/me",
-      headers: { cookie: sidCookie },
+      headers: { cookie },
     });
     expect(me.statusCode).toBe(200);
     expect(me.json()).toMatchObject({
@@ -125,26 +129,82 @@ describe("Auth/session security", () => {
 
 describe("Authorization boundaries", () => {
   it("blocks IDOR: normal user cannot read someone else's document", async () => {
-    const otherUserCookie = await login("other@example.com", "OtherPass1!x");
+    const { cookie } = await login("other@example.com", "OtherPass1!x");
     const res = await app.inject({
       method: "GET",
       url: `/api/documents/${userDocumentId}`,
-      headers: { cookie: otherUserCookie },
+      headers: { cookie },
     });
     expect(res.statusCode).toBe(403);
   });
 
   it("allows admin to read any document", async () => {
-    const adminCookie = await login("admin@example.com", "AdminPass1!x");
+    const { cookie } = await login("admin@example.com", "AdminPass1!x");
     const res = await app.inject({
       method: "GET",
       url: `/api/documents/${userDocumentId}`,
-      headers: { cookie: adminCookie },
+      headers: { cookie },
     });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toMatchObject({
       id: userDocumentId,
       title: "User private doc",
     });
+  });
+});
+
+describe("CSRF protection", () => {
+  it("returns csrfToken in login response", async () => {
+    const { csrfToken } = await login("user@example.com", "UserPass1!x");
+    expect(csrfToken).toBeTruthy();
+    expect(typeof csrfToken).toBe("string");
+    expect(csrfToken.length).toBeGreaterThan(20);
+  });
+
+  it("allows GET /auth/csrf-token to retrieve the token", async () => {
+    const { cookie, csrfToken } = await login("user@example.com", "UserPass1!x");
+    const res = await app.inject({
+      method: "GET",
+      url: "/auth/csrf-token",
+      headers: { cookie },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().csrfToken).toBe(csrfToken);
+  });
+
+  it("rejects POST without CSRF token header", async () => {
+    const { cookie } = await login("user@example.com", "UserPass1!x");
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/documents",
+      headers: { cookie },
+      payload: { title: "test doc" },
+    });
+    expect(res.statusCode).toBe(403);
+    expect(res.json().error).toMatch(/CSRF/i);
+  });
+
+  it("rejects POST with wrong CSRF token", async () => {
+    const { cookie } = await login("user@example.com", "UserPass1!x");
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/documents",
+      headers: { cookie, "x-csrf-token": "wrong-token-value" },
+      payload: { title: "test doc" },
+    });
+    expect(res.statusCode).toBe(403);
+    expect(res.json().error).toMatch(/CSRF/i);
+  });
+
+  it("allows POST with valid CSRF token", async () => {
+    const { cookie, csrfToken } = await login("user@example.com", "UserPass1!x");
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/documents",
+      headers: { cookie, "x-csrf-token": csrfToken },
+      payload: { title: "CSRF-protected doc" },
+    });
+    expect(res.statusCode).toBe(201);
+    expect(res.json().title).toBe("CSRF-protected doc");
   });
 });
