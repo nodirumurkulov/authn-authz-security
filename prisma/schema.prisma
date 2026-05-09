@@ -8,14 +8,16 @@ datasource db {
 }
 
 model User {
-  id           String    @id @default(cuid())
-  email        String    @unique
-  passwordHash String
-  createdAt    DateTime  @default(now())
-  sessions     Session[]
-  documents    Document[]
-  userRoles    UserRole[]
-  auditEvents  AuditEvent[] @relation("ActorAuditEvents")
+  id                  String    @id @default(cuid())
+  email               String    @unique
+  passwordHash        String
+  failedLoginAttempts Int       @default(0)
+  lockedUntil         DateTime?
+  createdAt           DateTime  @default(now())
+  sessions            Session[]
+  documents           Document[]
+  userRoles           UserRole[]
+  auditEvents         AuditEvent[] @relation("ActorAuditEvents")
 }
 
 model Role {
