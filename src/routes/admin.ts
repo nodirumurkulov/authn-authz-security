@@ -134,6 +134,8 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
       where: { id: userId },
       data: { failedLoginAttempts: 0, lockedUntil: null },
     });
+    const invalidated = await invalidateUserSessions(userId);
+
     await writeAudit(request, {
       actorUserId: request.sessionUser!.id,
       action: "account_unlocked",
@@ -142,9 +144,10 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
       metadata: {
         targetEmail: target.email,
         previousFailedAttempts: target.failedLoginAttempts,
+        sessionsInvalidated: invalidated,
       },
     });
-    return { ok: true, message: `Account ${target.email} unlocked` };
+    return { ok: true, message: `Account ${target.email} unlocked`, sessionsInvalidated: invalidated };
   });
 };
 
