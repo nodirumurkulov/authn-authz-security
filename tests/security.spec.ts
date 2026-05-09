@@ -210,3 +210,59 @@ describe("CSRF protection", () => {
     expect(res.json().title).toBe("CSRF-protected doc");
   });
 });
+
+describe("Session rotation on password change", () => {
+  it("rotates session and returns new CSRF token on password change", async () => {
+    const reg = await app.inject({
+      method: "POST",
+      url: "/auth/register",
+      payload: { email: "rotate-test@example.com", password: "OldPassword1!x" },
+    });
+    expect(reg.statusCode).toBe(201);
+
+    const { cookie, csrfToken } = await login("rotate-test@example.com", "OldPassword1!x");
+
+    const changeRes = await app.inject({
+      method: "PATCH",
+      url: "/auth/password",
+      headers: { cookie, "x-csrf-token": csrfToken },
+      payload: { currentPassword: "OldPassword1!x", newPassword: "NewPassword1!x" },
+    });
+    expect(changeRes.statusCode).toBe(200);
+    const body = changeRes.json();
+    expect(body.ok).toBe(true);
+    expect(body.csrfToken).toBeTruthy();
+    expect(body.csrfToken).not.toBe(csrfToken);
+
+    const newCookie = changeRes.cookies.find((c) => c.name === "sid")?.value;
+    expect(newCookie).toBeTruthy();
+
+    const me = await app.inject({
+      method: "GET",
+      url: "/auth/me",
+      headers: { cookie: `sid=${newCookie}` },
+    });
+    expect(me.statusCode).toBe(200);
+    const meBody = me.json();
+    expect(meBody.email).toBe("rotate-test@example.com");
+    expect(meBody.sessionRotatedAt).toBeTruthy();
+  });
+
+  it("old session is invalid after password change rotation", async () => {
+    const { cookie, csrfToken } = await login("rotate-test@example.com", "NewPassword1!x");
+
+    await app.inject({
+      method: "PATCH",
+      url: "/auth/password",
+      headers: { cookie, "x-csrf-token": csrfToken },
+      payload: { currentPassword: "NewPassword1!x", newPassword: "FinalPassword1!x" },
+    });
+
+    const me = await app.inject({
+      method: "GET",
+      url: "/auth/me",
+      headers: { cookie },
+    });
+    expect(me.statusCode).toBe(401);
+  });
+});
