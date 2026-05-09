@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "../prisma.js";
 import { requireAnyRole } from "../auth/guards.js";
 import { writeAudit } from "../lib/audit.js";
+import { invalidateUserSessions } from "../lib/sessionRotation.js";
 
 const assignRoleSchema = z.object({
   roleName: z.enum(["admin", "user", "auditor_readonly"]),
@@ -64,14 +65,16 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
       create: { userId, roleId: role.id },
       update: {},
     });
+    const invalidated = await invalidateUserSessions(userId);
+
     await writeAudit(request, {
       actorUserId: request.sessionUser!.id,
       action: "role_assigned",
       resourceType: "User",
       resourceId: userId,
-      metadata: { roleName, targetEmail: target.email },
+      metadata: { roleName, targetEmail: target.email, sessionsInvalidated: invalidated },
     });
-    return { ok: true };
+    return { ok: true, sessionsInvalidated: invalidated };
   });
 
   app.delete("/users/:userId/roles", async (request, reply) => {
