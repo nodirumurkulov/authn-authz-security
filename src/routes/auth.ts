@@ -4,6 +4,7 @@ import { prisma } from "../prisma.js";
 import { hashPassword, verifyPassword, dummyVerify } from "../lib/password.js";
 import { newSessionToken, hashSessionToken } from "../lib/sessionToken.js";
 import { newCsrfToken } from "../lib/csrf.js";
+import { rotateUserSession } from "../lib/sessionRotation.js";
 import { writeAudit } from "../lib/audit.js";
 import { requireAuth } from "../auth/guards.js";
 import { clearSessionCookie, setSessionCookie } from "../auth/sessionPlugin.js";
@@ -281,15 +282,21 @@ const authRoutes: FastifyPluginAsync<{ secureCookie: boolean }> = async (app, op
         where: { id: full.id },
         data: { passwordHash: await hashPassword(newPassword) },
       });
-      await prisma.session.deleteMany({ where: { userId: full.id } });
-      clearSessionCookie(reply);
+
+      const rotated = await rotateUserSession(full.id);
+      setSessionCookie(reply, rotated.token, SESSION_MAX_AGE_SEC, app.secureCookie);
+
       await writeAudit(request, {
         actorUserId: full.id,
         action: "password_change_success",
         resourceType: "User",
         resourceId: full.id,
       });
-      return { ok: true, message: "Password updated; please log in again." };
+      return {
+        ok: true,
+        message: "Password updated; session rotated.",
+        csrfToken: rotated.csrfToken,
+      };
     },
   );
 };
