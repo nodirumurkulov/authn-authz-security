@@ -1,9 +1,15 @@
-Small Fastify + Prisma (SQLite) API demonstrating authentication, server-side sessions, RBAC, rate limiting, input validation, audit logging, and basic secret handling.
+# authn-authz-security
 
-- login + server-side sessions
-- role-based access control (RBAC)
-- secure API patterns (validation, rate limits, headers)
-- audit logging for sensitive actions
+Small Fastify + Prisma (SQLite) API demonstrating production-grade authentication, authorization, and API security patterns.
+
+- login + server-side sessions with SHA-256 token hashing
+- role-based access control (RBAC) with session rotation on privilege changes
+- CSRF protection via per-session synchronizer token
+- account lockout after failed login attempts
+- structured error handling with machine-readable error codes
+- request tracing via `X-Request-Id` header
+- secure API patterns (Zod validation, rate limits, security headers)
+- audit logging for sensitive actions with request ID correlation
 
 ## Quick start
 
@@ -103,6 +109,31 @@ curl -s -b cookies.txt -H "Content-Type: application/json" \
   http://localhost:3000/api/documents
 ```
 
+### Error response examples
+
+```bash
+# Validation error (missing required field)
+curl -s -H "Content-Type: application/json" \
+  -d '{"email":"not-an-email"}' \
+  http://localhost:3000/auth/register
+# → {"error":{"code":"VALIDATION_ERROR","message":"Invalid input","details":{...},"requestId":"..."}}
+
+# Authentication error (wrong password)
+curl -s -H "Content-Type: application/json" \
+  -d '{"email":"user@example.com","password":"wrong"}' \
+  http://localhost:3000/auth/login
+# → {"error":{"code":"INVALID_CREDENTIALS","message":"Invalid email or password","requestId":"..."}}
+
+# CSRF error (missing token on POST)
+curl -s -b cookies.txt -H "Content-Type: application/json" \
+  -d '{"title":"test"}' \
+  http://localhost:3000/api/documents
+# → {"error":{"code":"CSRF_TOKEN_MISSING","message":"CSRF token is required","requestId":"..."}}
+
+# Account locked (after 5 failed attempts)
+# → {"error":{"code":"ACCOUNT_LOCKED","message":"Account is locked ...","requestId":"..."}}
+```
+
 ## Security features included
 
 - Argon2id password hashing
@@ -157,13 +188,68 @@ All error responses follow a consistent structure:
 | `details` | Optional structured validation details (field-level errors) |
 | `requestId` | Correlation ID — echoed from `X-Request-Id` header or auto-generated |
 
-Error codes: `VALIDATION_ERROR`, `INVALID_CREDENTIALS`, `UNAUTHORIZED`, `FORBIDDEN`, `INSUFFICIENT_ROLE`, `CSRF_TOKEN_MISSING`, `CSRF_TOKEN_INVALID`, `NOT_FOUND`, `CONFLICT`, `RATE_LIMITED`, `ACCOUNT_LOCKED`, `INTERNAL_ERROR`, `SERVER_MISCONFIGURATION`.
+### Error code reference
+
+| Code | HTTP | When |
+|------|------|------|
+| `VALIDATION_ERROR` | 400 | Request body or params fail Zod schema validation |
+| `INVALID_PARAMETERS` | 400 | Route parameters (`:id`, `:userId`) fail validation |
+| `INVALID_CREDENTIALS` | 401 | Wrong email or password on login |
+| `UNAUTHORIZED` | 401 | No valid session cookie or session expired |
+| `PASSWORD_CHANGE_FAILED` | 401 | Current password incorrect during password change |
+| `FORBIDDEN` | 403 | Authenticated but not authorized for this resource |
+| `INSUFFICIENT_ROLE` | 403 | User lacks the required role (e.g. non-admin accessing admin routes) |
+| `CSRF_TOKEN_MISSING` | 403 | State-changing request sent without `x-csrf-token` header |
+| `CSRF_TOKEN_INVALID` | 403 | `x-csrf-token` header value does not match session token |
+| `CSRF_SESSION_MISSING` | 403 | Session exists but has no CSRF token stored |
+| `NOT_FOUND` | 404 | Requested resource (user, document, role assignment) does not exist |
+| `CONFLICT` | 409 | Resource already exists (e.g. duplicate email on registration) |
+| `REGISTRATION_FAILED` | 409 | Registration failed due to existing account |
+| `ACCOUNT_LOCKED` | 423 | Account locked after too many failed login attempts |
+| `RATE_LIMITED` | 429 | Request rate limit exceeded |
+| `INTERNAL_ERROR` | 500 | Unexpected server error (details are never exposed to client) |
+| `SERVER_MISCONFIGURATION` | 500 | Missing expected database records (e.g. roles not seeded) |
+
+## Request tracing (`X-Request-Id`)
+
+Every response includes an `X-Request-Id` header for end-to-end request tracing:
+
+```bash
+# Auto-generated request ID
+curl -sI http://localhost:3000/health | grep x-request-id
+# x-request-id: 3a7f2b1c9d4e8f0a1b2c3d4e5f6a7b8c
+
+# Client-provided request ID is echoed back
+curl -sI -H "X-Request-Id: txn-abc-123" http://localhost:3000/health | grep x-request-id
+# x-request-id: txn-abc-123
+```
+
+**How it works:**
+- If the client sends `X-Request-Id`, the server echoes it back unchanged
+- If no header is provided, the server generates a random 32-character hex ID
+- The request ID is included in all error responses (`error.requestId`)
+- The request ID is written into audit log metadata for cross-referencing
+
+**Use cases:**
+- **Debugging:** Attach a request ID in your client, find it in server logs
+- **Incident response:** Correlate audit events with specific API requests
+- **Distributed tracing:** Pass the ID through downstream services for full trace visibility
+
+## Running tests
+
+```bash
+npm test
+```
+
+The test suite covers authentication flows, RBAC, IDOR protection, CSRF validation, structured error codes, request ID propagation, and error response format.
 
 ## Project notes
 
 - Never commit `.env` or real secrets.
 - For production, use a managed secret store and HTTPS.
 - If Git behaves oddly in cloud-sync folders, use a local clone path for development.
+- All error responses use a consistent JSON structure — see [Error response format](#error-response-format) above.
+- Breaking change note: error responses use `{error: {code, message}}` instead of `{error: "string"}`.
 
 ## Threat model
 
