@@ -185,7 +185,7 @@ describe("CSRF protection", () => {
       payload: { title: "test doc" },
     });
     expect(res.statusCode).toBe(403);
-    expect(res.json().error).toMatch(/CSRF/i);
+    expect(res.json().error.code).toMatch(/CSRF/i);
   });
 
   it("rejects POST with wrong CSRF token", async () => {
@@ -197,7 +197,7 @@ describe("CSRF protection", () => {
       payload: { title: "test doc" },
     });
     expect(res.statusCode).toBe(403);
-    expect(res.json().error).toMatch(/CSRF/i);
+    expect(res.json().error.code).toMatch(/CSRF/i);
   });
 
   it("allows POST with valid CSRF token", async () => {

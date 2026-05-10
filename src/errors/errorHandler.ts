@@ -10,7 +10,7 @@ import { logError } from "./errorLogger.js";
  * - Unknown errors return a generic 500 without leaking internals.
  */
 export function registerErrorHandler(app: FastifyInstance): void {
-  app.setErrorHandler((error, request, reply) => {
+  app.setErrorHandler((error: Error, request, reply) => {
     const requestId = (request as unknown as { _requestId?: string })._requestId;
 
     if (error instanceof AppError) {
@@ -21,11 +21,12 @@ export function registerErrorHandler(app: FastifyInstance): void {
       return reply.code(statusCode).send(body);
     }
 
-    if (error.statusCode && error.statusCode < 500) {
-      return reply.code(error.statusCode).send({
+    const fastifyError = error as Error & { statusCode?: number; code?: string };
+    if (fastifyError.statusCode && fastifyError.statusCode < 500) {
+      return reply.code(fastifyError.statusCode).send({
         error: {
-          code: error.code ?? "REQUEST_ERROR",
-          message: error.message,
+          code: fastifyError.code ?? "REQUEST_ERROR",
+          message: fastifyError.message,
           ...(requestId ? { requestId } : {}),
         },
       });
