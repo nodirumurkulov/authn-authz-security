@@ -11,3 +11,5 @@ export {
 } from "./resourceErrors.js";
 export { serializeError } from "./errorSerializer.js";
 export type { StructuredErrorResponse } from "./errorSerializer.js";
+export { logError } from "./errorLogger.js";
+export { throwZodValidationError } from "./zodError.js";
