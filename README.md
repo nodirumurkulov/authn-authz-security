@@ -116,6 +116,10 @@ curl -s -b cookies.txt -H "Content-Type: application/json" \
 - global + auth route rate limiting
 - security headers via `@fastify/helmet`
 - session rotation on privilege changes (password change, role assignment/revocation, unlock)
+- structured error handling with machine-readable error codes (`VALIDATION_ERROR`, `UNAUTHORIZED`, `NOT_FOUND`, etc.)
+- `X-Request-Id` on every response for log correlation and incident tracing
+- error logging with sensitive field sanitization (passwords, tokens, secrets redacted)
+- global error handler that prevents stack trace / internal detail leakage
 - audit logs for login, password, role, session rotation, and document actions
 
 ## Environment variables
@@ -130,6 +134,30 @@ See `.env.example`:
 - `SEED_ADMIN_PASSWORD`
 - `SEED_USER_PASSWORD`
 - `SEED_AUDITOR_PASSWORD`
+
+## Error response format
+
+All error responses follow a consistent structure:
+
+```json
+{
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "Invalid input",
+    "details": { "fields": { "email": ["Invalid email"] }, "formErrors": [] },
+    "requestId": "a1b2c3d4e5f6..."
+  }
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `code` | Machine-readable error code for programmatic handling |
+| `message` | Human-readable error description |
+| `details` | Optional structured validation details (field-level errors) |
+| `requestId` | Correlation ID — echoed from `X-Request-Id` header or auto-generated |
+
+Error codes: `VALIDATION_ERROR`, `INVALID_CREDENTIALS`, `UNAUTHORIZED`, `FORBIDDEN`, `INSUFFICIENT_ROLE`, `CSRF_TOKEN_MISSING`, `CSRF_TOKEN_INVALID`, `NOT_FOUND`, `CONFLICT`, `RATE_LIMITED`, `ACCOUNT_LOCKED`, `INTERNAL_ERROR`, `SERVER_MISCONFIGURATION`.
 
 ## Project notes
 
