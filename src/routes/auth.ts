@@ -270,7 +270,7 @@ const authRoutes: FastifyPluginAsync<{ secureCookie: boolean }> = async (app, op
     async (request, reply) => {
       const parsed = changePasswordSchema.safeParse(request.body);
       if (!parsed.success) {
-        return reply.code(400).send({ error: "Invalid input", details: parsed.error.flatten() });
+        throw new ValidationError("Invalid input", parsed.error.flatten());
       }
       const { currentPassword, newPassword } = parsed.data;
       const full = await prisma.user.findUniqueOrThrow({
@@ -284,7 +284,7 @@ const authRoutes: FastifyPluginAsync<{ secureCookie: boolean }> = async (app, op
           resourceType: "User",
           resourceId: full.id,
         });
-        return reply.code(401).send({ error: "Current password incorrect" });
+        throw new AuthenticationError("Current password incorrect", ErrorCode.PASSWORD_CHANGE_FAILED);
       }
       await prisma.user.update({
         where: { id: full.id },
