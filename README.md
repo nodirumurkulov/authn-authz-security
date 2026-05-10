@@ -179,6 +179,31 @@ All error responses follow a consistent structure:
 | `INTERNAL_ERROR` | 500 | Unexpected server error (details are never exposed to client) |
 | `SERVER_MISCONFIGURATION` | 500 | Missing expected database records (e.g. roles not seeded) |
 
+## Request tracing (`X-Request-Id`)
+
+Every response includes an `X-Request-Id` header for end-to-end request tracing:
+
+```bash
+# Auto-generated request ID
+curl -sI http://localhost:3000/health | grep x-request-id
+# x-request-id: 3a7f2b1c9d4e8f0a1b2c3d4e5f6a7b8c
+
+# Client-provided request ID is echoed back
+curl -sI -H "X-Request-Id: txn-abc-123" http://localhost:3000/health | grep x-request-id
+# x-request-id: txn-abc-123
+```
+
+**How it works:**
+- If the client sends `X-Request-Id`, the server echoes it back unchanged
+- If no header is provided, the server generates a random 32-character hex ID
+- The request ID is included in all error responses (`error.requestId`)
+- The request ID is written into audit log metadata for cross-referencing
+
+**Use cases:**
+- **Debugging:** Attach a request ID in your client, find it in server logs
+- **Incident response:** Correlate audit events with specific API requests
+- **Distributed tracing:** Pass the ID through downstream services for full trace visibility
+
 ## Project notes
 
 - Never commit `.env` or real secrets.
