@@ -157,7 +157,27 @@ All error responses follow a consistent structure:
 | `details` | Optional structured validation details (field-level errors) |
 | `requestId` | Correlation ID — echoed from `X-Request-Id` header or auto-generated |
 
-Error codes: `VALIDATION_ERROR`, `INVALID_CREDENTIALS`, `UNAUTHORIZED`, `FORBIDDEN`, `INSUFFICIENT_ROLE`, `CSRF_TOKEN_MISSING`, `CSRF_TOKEN_INVALID`, `NOT_FOUND`, `CONFLICT`, `RATE_LIMITED`, `ACCOUNT_LOCKED`, `INTERNAL_ERROR`, `SERVER_MISCONFIGURATION`.
+### Error code reference
+
+| Code | HTTP | When |
+|------|------|------|
+| `VALIDATION_ERROR` | 400 | Request body or params fail Zod schema validation |
+| `INVALID_PARAMETERS` | 400 | Route parameters (`:id`, `:userId`) fail validation |
+| `INVALID_CREDENTIALS` | 401 | Wrong email or password on login |
+| `UNAUTHORIZED` | 401 | No valid session cookie or session expired |
+| `PASSWORD_CHANGE_FAILED` | 401 | Current password incorrect during password change |
+| `FORBIDDEN` | 403 | Authenticated but not authorized for this resource |
+| `INSUFFICIENT_ROLE` | 403 | User lacks the required role (e.g. non-admin accessing admin routes) |
+| `CSRF_TOKEN_MISSING` | 403 | State-changing request sent without `x-csrf-token` header |
+| `CSRF_TOKEN_INVALID` | 403 | `x-csrf-token` header value does not match session token |
+| `CSRF_SESSION_MISSING` | 403 | Session exists but has no CSRF token stored |
+| `NOT_FOUND` | 404 | Requested resource (user, document, role assignment) does not exist |
+| `CONFLICT` | 409 | Resource already exists (e.g. duplicate email on registration) |
+| `REGISTRATION_FAILED` | 409 | Registration failed due to existing account |
+| `ACCOUNT_LOCKED` | 423 | Account locked after too many failed login attempts |
+| `RATE_LIMITED` | 429 | Request rate limit exceeded |
+| `INTERNAL_ERROR` | 500 | Unexpected server error (details are never exposed to client) |
+| `SERVER_MISCONFIGURATION` | 500 | Missing expected database records (e.g. roles not seeded) |
 
 ## Project notes
 
