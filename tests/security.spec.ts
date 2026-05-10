@@ -331,3 +331,126 @@ describe("Session invalidation on privilege change", () => {
     expect(me.json().email).toBe("admin@example.com");
   });
 });
+
+describe("Structured error handling", () => {
+  it("returns structured error with code for validation failures", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/auth/register",
+      payload: { email: "bad", password: "x" },
+    });
+    expect(res.statusCode).toBe(400);
+    const body = res.json();
+    expect(body.error).toBeDefined();
+    expect(body.error.code).toBe("VALIDATION_ERROR");
+    expect(body.error.message).toBe("Invalid input");
+    expect(body.error.details).toBeDefined();
+  });
+
+  it("returns structured error with code for invalid credentials", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/auth/login",
+      payload: { email: "user@example.com", password: "WrongPassword1!x" },
+    });
+    expect(res.statusCode).toBe(401);
+    const body = res.json();
+    expect(body.error.code).toBe("INVALID_CREDENTIALS");
+    expect(body.error.message).toBe("Invalid credentials");
+  });
+
+  it("returns structured error for unauthorized access", async () => {
+    const res = await app.inject({
+      method: "GET",
+      url: "/auth/me",
+    });
+    expect(res.statusCode).toBe(401);
+    const body = res.json();
+    expect(body.error.code).toBe("UNAUTHORIZED");
+  });
+
+  it("returns structured error for forbidden IDOR access", async () => {
+    const { cookie } = await login("other@example.com", "OtherPass1!x");
+    const res = await app.inject({
+      method: "GET",
+      url: `/api/documents/${userDocumentId}`,
+      headers: { cookie },
+    });
+    expect(res.statusCode).toBe(403);
+    const body = res.json();
+    expect(body.error.code).toBe("FORBIDDEN");
+  });
+
+  it("returns X-Request-Id header on all responses", async () => {
+    const res = await app.inject({
+      method: "GET",
+      url: "/health",
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.headers["x-request-id"]).toBeDefined();
+    expect(typeof res.headers["x-request-id"]).toBe("string");
+    expect((res.headers["x-request-id"] as string).length).toBeGreaterThan(0);
+  });
+
+  it("echoes back client-provided X-Request-Id", async () => {
+    const clientRequestId = "test-request-id-12345";
+    const res = await app.inject({
+      method: "GET",
+      url: "/health",
+      headers: { "x-request-id": clientRequestId },
+    });
+    expect(res.headers["x-request-id"]).toBe(clientRequestId);
+  });
+
+  it("includes requestId in structured error responses", async () => {
+    const clientRequestId = "error-trace-abc";
+    const res = await app.inject({
+      method: "POST",
+      url: "/auth/register",
+      headers: { "x-request-id": clientRequestId },
+      payload: { email: "bad", password: "x" },
+    });
+    expect(res.statusCode).toBe(400);
+    const body = res.json();
+    expect(body.error.requestId).toBe(clientRequestId);
+  });
+
+  it("returns NOT_FOUND for missing document", async () => {
+    const { cookie } = await login("user@example.com", "UserPass1!x");
+    const res = await app.inject({
+      method: "GET",
+      url: "/api/documents/nonexistent-id",
+      headers: { cookie },
+    });
+    expect(res.statusCode).toBe(404);
+    const body = res.json();
+    expect(body.error.code).toBe("NOT_FOUND");
+    expect(body.error.message).toBe("Document not found");
+  });
+
+  it("returns CSRF_TOKEN_MISSING for missing CSRF header on state-changing requests", async () => {
+    const { cookie } = await login("user@example.com", "UserPass1!x");
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/documents",
+      headers: { cookie },
+      payload: { title: "test doc" },
+    });
+    expect(res.statusCode).toBe(403);
+    const body = res.json();
+    expect(body.error.code).toBe("CSRF_TOKEN_MISSING");
+  });
+
+  it("returns CSRF_TOKEN_INVALID for wrong CSRF token", async () => {
+    const { cookie } = await login("user@example.com", "UserPass1!x");
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/documents",
+      headers: { cookie, "x-csrf-token": "wrong-token-value" },
+      payload: { title: "test doc" },
+    });
+    expect(res.statusCode).toBe(403);
+    const body = res.json();
+    expect(body.error.code).toBe("CSRF_TOKEN_INVALID");
+  });
+});
