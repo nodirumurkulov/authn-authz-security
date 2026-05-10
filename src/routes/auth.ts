@@ -8,6 +8,15 @@ import { rotateUserSession } from "../lib/sessionRotation.js";
 import { writeAudit } from "../lib/audit.js";
 import { requireAuth } from "../auth/guards.js";
 import { clearSessionCookie, setSessionCookie } from "../auth/sessionPlugin.js";
+import {
+  ValidationError,
+  AuthenticationError,
+  ConflictError,
+  RateLimitError,
+  AccountLockedError,
+  ServerMisconfigurationError,
+  ErrorCode,
+} from "../errors/index.js";
 
 const SESSION_MS = 24 * 60 * 60 * 1000;
 const SESSION_MAX_AGE_SEC = Math.floor(SESSION_MS / 1000);
@@ -88,16 +97,16 @@ const authRoutes: FastifyPluginAsync<{ secureCookie: boolean }> = async (app, op
   app.post("/register", async (request, reply) => {
     const parsed = registerSchema.safeParse(request.body);
     if (!parsed.success) {
-      return reply.code(400).send({ error: "Invalid input", details: parsed.error.flatten() });
+      throw new ValidationError("Invalid input", parsed.error.flatten());
     }
     const { email, password } = parsed.data;
     const existing = await prisma.user.findUnique({ where: { email } });
     if (existing) {
-      return reply.code(409).send({ error: "Registration failed" });
+      throw new ConflictError("Registration failed", ErrorCode.REGISTRATION_FAILED);
     }
     const userRole = await prisma.role.findUnique({ where: { name: "user" } });
     if (!userRole) {
-      return reply.code(500).send({ error: "Server misconfiguration" });
+      throw new ServerMisconfigurationError();
     }
     const passwordHash = await hashPassword(password);
     const user = await prisma.user.create({
@@ -120,7 +129,7 @@ const authRoutes: FastifyPluginAsync<{ secureCookie: boolean }> = async (app, op
   app.post("/login", async (request, reply) => {
     const parsed = loginSchema.safeParse(request.body);
     if (!parsed.success) {
-      return reply.code(400).send({ error: "Invalid input", details: parsed.error.flatten() });
+      throw new ValidationError("Invalid input", parsed.error.flatten());
     }
     const { email, password } = parsed.data;
     const throttleKey = `${request.ip}:${email.toLowerCase()}`;
@@ -130,7 +139,7 @@ const authRoutes: FastifyPluginAsync<{ secureCookie: boolean }> = async (app, op
         action: "login_rate_limited",
         metadata: { email },
       });
-      return reply.code(429).send({ error: "Too many attempts" });
+      throw new RateLimitError();
     }
 
     const user = await prisma.user.findUnique({
@@ -147,10 +156,7 @@ const authRoutes: FastifyPluginAsync<{ secureCookie: boolean }> = async (app, op
         resourceId: user.id,
         metadata: { email, lockedUntil: user.lockedUntil.toISOString() },
       });
-      return reply.code(423).send({
-        error: "Account locked",
-        message: "Too many failed login attempts. Try again later.",
-      });
+      throw new AccountLockedError();
     }
 
     const ok = user
@@ -182,7 +188,7 @@ const authRoutes: FastifyPluginAsync<{ secureCookie: boolean }> = async (app, op
         action: "login_failure",
         metadata: { email },
       });
-      return reply.code(401).send({ error: "Invalid credentials" });
+      throw new AuthenticationError("Invalid credentials", ErrorCode.INVALID_CREDENTIALS);
     }
 
     if (user.failedLoginAttempts > 0) {
@@ -264,7 +270,7 @@ const authRoutes: FastifyPluginAsync<{ secureCookie: boolean }> = async (app, op
     async (request, reply) => {
       const parsed = changePasswordSchema.safeParse(request.body);
       if (!parsed.success) {
-        return reply.code(400).send({ error: "Invalid input", details: parsed.error.flatten() });
+        throw new ValidationError("Invalid input", parsed.error.flatten());
       }
       const { currentPassword, newPassword } = parsed.data;
       const full = await prisma.user.findUniqueOrThrow({
@@ -278,7 +284,7 @@ const authRoutes: FastifyPluginAsync<{ secureCookie: boolean }> = async (app, op
           resourceType: "User",
           resourceId: full.id,
         });
-        return reply.code(401).send({ error: "Current password incorrect" });
+        throw new AuthenticationError("Current password incorrect", ErrorCode.PASSWORD_CHANGE_FAILED);
       }
       await prisma.user.update({
         where: { id: full.id },

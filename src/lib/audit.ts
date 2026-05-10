@@ -13,6 +13,12 @@ export async function writeAudit(
 ): Promise<void> {
   const ip = req.ip;
   const userAgent = req.headers["user-agent"] ?? null;
+  const requestId = (req as unknown as { _requestId?: string })._requestId;
+  const enrichedMetadata = {
+    ...params.metadata,
+    ...(requestId ? { requestId } : {}),
+  };
+  const hasMetadata = Object.keys(enrichedMetadata).length > 0;
   await prisma.auditEvent.create({
     data: {
       actorUserId: params.actorUserId,
@@ -21,7 +27,7 @@ export async function writeAudit(
       resourceId: params.resourceId ?? null,
       ip,
       userAgent: typeof userAgent === "string" ? userAgent : null,
-      metadata: params.metadata ? JSON.stringify(params.metadata) : null,
+      metadata: hasMetadata ? JSON.stringify(enrichedMetadata) : null,
     },
   });
 }

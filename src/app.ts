@@ -5,6 +5,8 @@ import rateLimit from "@fastify/rate-limit";
 import type { Config } from "./config.js";
 import sessionPlugin from "./auth/sessionPlugin.js";
 import { requireCsrf } from "./auth/csrfGuard.js";
+import { registerErrorHandler } from "./errors/errorHandler.js";
+import { registerRequestId } from "./lib/requestId.js";
 import healthRoutes from "./routes/health.js";
 import authRoutes from "./routes/auth.js";
 import documentRoutes from "./routes/documents.js";
@@ -46,6 +48,9 @@ export async function buildApp(config: Config): Promise<FastifyInstance> {
   });
 
   await app.register(sessionPlugin, { secret: config.SESSION_SECRET });
+
+  registerRequestId(app);
+  registerErrorHandler(app);
 
   app.decorate("secureCookie", config.NODE_ENV === "production");
 

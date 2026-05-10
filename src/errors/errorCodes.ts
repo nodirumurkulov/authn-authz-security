@@ -1,0 +1,39 @@
+/**
+ * Machine-readable error codes returned in every error response.
+ * Clients can switch on these codes for programmatic handling.
+ */
+export const ErrorCode = {
+  // Validation
+  VALIDATION_ERROR: "VALIDATION_ERROR",
+  INVALID_PARAMETERS: "INVALID_PARAMETERS",
+
+  // Authentication
+  INVALID_CREDENTIALS: "INVALID_CREDENTIALS",
+  SESSION_EXPIRED: "SESSION_EXPIRED",
+  UNAUTHORIZED: "UNAUTHORIZED",
+  ACCOUNT_LOCKED: "ACCOUNT_LOCKED",
+  PASSWORD_CHANGE_FAILED: "PASSWORD_CHANGE_FAILED",
+
+  // Authorization
+  FORBIDDEN: "FORBIDDEN",
+  INSUFFICIENT_ROLE: "INSUFFICIENT_ROLE",
+
+  // CSRF
+  CSRF_TOKEN_MISSING: "CSRF_TOKEN_MISSING",
+  CSRF_TOKEN_INVALID: "CSRF_TOKEN_INVALID",
+  CSRF_SESSION_MISSING: "CSRF_SESSION_MISSING",
+
+  // Resources
+  NOT_FOUND: "NOT_FOUND",
+  CONFLICT: "CONFLICT",
+  REGISTRATION_FAILED: "REGISTRATION_FAILED",
+
+  // Rate limiting
+  RATE_LIMITED: "RATE_LIMITED",
+
+  // Server
+  INTERNAL_ERROR: "INTERNAL_ERROR",
+  SERVER_MISCONFIGURATION: "SERVER_MISCONFIGURATION",
+} as const;
+
+export type ErrorCodeType = (typeof ErrorCode)[keyof typeof ErrorCode];

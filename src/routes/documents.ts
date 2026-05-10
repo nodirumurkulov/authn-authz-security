@@ -3,6 +3,11 @@ import { z } from "zod";
 import { prisma } from "../prisma.js";
 import { requireAuth, hasRole } from "../auth/guards.js";
 import { writeAudit } from "../lib/audit.js";
+import {
+  ValidationError,
+  NotFoundError,
+  AuthorizationError,
+} from "../errors/index.js";
 
 const createDocSchema = z.object({
   title: z.string().min(1).max(200),
@@ -35,7 +40,7 @@ const documentRoutes: FastifyPluginAsync = async (app) => {
   app.post("/", async (request, reply) => {
     const parsed = createDocSchema.safeParse(request.body);
     if (!parsed.success) {
-      return reply.code(400).send({ error: "Invalid input", details: parsed.error.flatten() });
+      throw new ValidationError("Invalid input", parsed.error.flatten());
     }
     const { title, body } = parsed.data;
     const doc = await prisma.document.create({
@@ -54,16 +59,16 @@ const documentRoutes: FastifyPluginAsync = async (app) => {
   app.get("/:id", async (request, reply) => {
     const paramsParsed = idParamSchema.safeParse(request.params);
     if (!paramsParsed.success) {
-      return reply.code(400).send({ error: "Invalid parameters" });
+      throw new ValidationError("Invalid parameters", paramsParsed.error.flatten());
     }
     const { id } = paramsParsed.data;
     const doc = await prisma.document.findUnique({ where: { id } });
     if (!doc) {
-      return reply.code(404).send({ error: "Not found" });
+      throw new NotFoundError("Document");
     }
     const u = request.sessionUser!;
     if (!hasRole(u, "admin") && doc.userId !== u.id) {
-      return reply.code(403).send({ error: "Forbidden" });
+      throw new AuthorizationError();
     }
     return doc;
   });
@@ -71,20 +76,20 @@ const documentRoutes: FastifyPluginAsync = async (app) => {
   app.patch("/:id", async (request, reply) => {
     const paramsParsed = idParamSchema.safeParse(request.params);
     if (!paramsParsed.success) {
-      return reply.code(400).send({ error: "Invalid parameters" });
+      throw new ValidationError("Invalid parameters", paramsParsed.error.flatten());
     }
     const { id } = paramsParsed.data;
     const parsed = updateDocSchema.safeParse(request.body);
     if (!parsed.success) {
-      return reply.code(400).send({ error: "Invalid input", details: parsed.error.flatten() });
+      throw new ValidationError("Invalid input", parsed.error.flatten());
     }
     const doc = await prisma.document.findUnique({ where: { id } });
     if (!doc) {
-      return reply.code(404).send({ error: "Not found" });
+      throw new NotFoundError("Document");
     }
     const u = request.sessionUser!;
     if (!hasRole(u, "admin") && doc.userId !== u.id) {
-      return reply.code(403).send({ error: "Forbidden" });
+      throw new AuthorizationError();
     }
     const data = parsed.data;
     const updated = await prisma.document.update({
@@ -106,16 +111,16 @@ const documentRoutes: FastifyPluginAsync = async (app) => {
   app.delete("/:id", async (request, reply) => {
     const paramsParsed = idParamSchema.safeParse(request.params);
     if (!paramsParsed.success) {
-      return reply.code(400).send({ error: "Invalid parameters" });
+      throw new ValidationError("Invalid parameters", paramsParsed.error.flatten());
     }
     const { id } = paramsParsed.data;
     const doc = await prisma.document.findUnique({ where: { id } });
     if (!doc) {
-      return reply.code(404).send({ error: "Not found" });
+      throw new NotFoundError("Document");
     }
     const u = request.sessionUser!;
     if (!hasRole(u, "admin") && doc.userId !== u.id) {
-      return reply.code(403).send({ error: "Forbidden" });
+      throw new AuthorizationError();
     }
     await prisma.document.delete({ where: { id } });
     await writeAudit(request, {

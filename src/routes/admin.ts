@@ -4,6 +4,11 @@ import { prisma } from "../prisma.js";
 import { requireAnyRole } from "../auth/guards.js";
 import { writeAudit } from "../lib/audit.js";
 import { invalidateUserSessions } from "../lib/sessionRotation.js";
+import {
+  ValidationError,
+  NotFoundError,
+  ServerMisconfigurationError,
+} from "../errors/index.js";
 
 const assignRoleSchema = z.object({
   roleName: z.enum(["admin", "user", "auditor_readonly"]),
@@ -44,21 +49,21 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
   app.post("/users/:userId/roles", async (request, reply) => {
     const paramsParsed = userIdParamSchema.safeParse(request.params);
     if (!paramsParsed.success) {
-      return reply.code(400).send({ error: "Invalid parameters" });
+      throw new ValidationError("Invalid parameters", paramsParsed.error.flatten());
     }
     const { userId } = paramsParsed.data;
     const parsed = assignRoleSchema.safeParse(request.body);
     if (!parsed.success) {
-      return reply.code(400).send({ error: "Invalid input", details: parsed.error.flatten() });
+      throw new ValidationError("Invalid input", parsed.error.flatten());
     }
     const { roleName } = parsed.data;
     const target = await prisma.user.findUnique({ where: { id: userId } });
     if (!target) {
-      return reply.code(404).send({ error: "Not found" });
+      throw new NotFoundError("User");
     }
     const role = await prisma.role.findUnique({ where: { name: roleName } });
     if (!role) {
-      return reply.code(500).send({ error: "Server misconfiguration" });
+      throw new ServerMisconfigurationError();
     }
     await prisma.userRole.upsert({
       where: { userId_roleId: { userId, roleId: role.id } },
@@ -89,27 +94,27 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
   app.delete("/users/:userId/roles", async (request, reply) => {
     const paramsParsed = userIdParamSchema.safeParse(request.params);
     if (!paramsParsed.success) {
-      return reply.code(400).send({ error: "Invalid parameters" });
+      throw new ValidationError("Invalid parameters", paramsParsed.error.flatten());
     }
     const { userId } = paramsParsed.data;
     const parsed = assignRoleSchema.safeParse(request.body);
     if (!parsed.success) {
-      return reply.code(400).send({ error: "Invalid input", details: parsed.error.flatten() });
+      throw new ValidationError("Invalid input", parsed.error.flatten());
     }
     const { roleName } = parsed.data;
     const target = await prisma.user.findUnique({ where: { id: userId } });
     if (!target) {
-      return reply.code(404).send({ error: "Not found" });
+      throw new NotFoundError("User");
     }
     const role = await prisma.role.findUnique({ where: { name: roleName } });
     if (!role) {
-      return reply.code(500).send({ error: "Server misconfiguration" });
+      throw new ServerMisconfigurationError();
     }
     const existing = await prisma.userRole.findUnique({
       where: { userId_roleId: { userId, roleId: role.id } },
     });
     if (!existing) {
-      return reply.code(404).send({ error: "User does not have this role" });
+      throw new NotFoundError("Role assignment");
     }
     await prisma.userRole.delete({
       where: { userId_roleId: { userId, roleId: role.id } },
@@ -138,15 +143,15 @@ const adminRoutes: FastifyPluginAsync = async (app) => {
   app.post("/users/:userId/unlock", async (request, reply) => {
     const paramsParsed = userIdParamSchema.safeParse(request.params);
     if (!paramsParsed.success) {
-      return reply.code(400).send({ error: "Invalid parameters" });
+      throw new ValidationError("Invalid parameters", paramsParsed.error.flatten());
     }
     const { userId } = paramsParsed.data;
     const target = await prisma.user.findUnique({ where: { id: userId } });
     if (!target) {
-      return reply.code(404).send({ error: "Not found" });
+      throw new NotFoundError("User");
     }
     if (target.failedLoginAttempts === 0 && !target.lockedUntil) {
-      return reply.code(400).send({ error: "Account is not locked" });
+      throw new ValidationError("Account is not locked");
     }
     await prisma.user.update({
       where: { id: userId },

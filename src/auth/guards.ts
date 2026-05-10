@@ -1,22 +1,23 @@
 import type { preHandlerHookHandler } from "fastify";
+import { AuthenticationError, AuthorizationError, ErrorCode } from "../errors/index.js";
 
 export function requireAuth(): preHandlerHookHandler {
-  return async (request, reply) => {
+  return async (request) => {
     if (!request.sessionUser) {
-      return reply.code(401).send({ error: "Unauthorized" });
+      throw new AuthenticationError("Unauthorized", ErrorCode.UNAUTHORIZED);
     }
   };
 }
 
 export function requireAnyRole(...allowed: string[]): preHandlerHookHandler {
-  return async (request, reply) => {
+  return async (request) => {
     if (!request.sessionUser) {
-      return reply.code(401).send({ error: "Unauthorized" });
+      throw new AuthenticationError("Unauthorized", ErrorCode.UNAUTHORIZED);
     }
     const names = new Set(request.sessionUser.roles.map((r) => r.name));
     const ok = allowed.some((a) => names.has(a));
     if (!ok) {
-      return reply.code(403).send({ error: "Forbidden" });
+      throw new AuthorizationError("Insufficient role", ErrorCode.INSUFFICIENT_ROLE);
     }
   };
 }

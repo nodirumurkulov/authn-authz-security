@@ -18,7 +18,7 @@
 | Spoofing            | Forged session cookie                               | Random 256-bit token; cookie signed with server secret; lookup only on server |
 | Tampering           | Client changes `userId` in body to escalate; CSRF | Identity from session only; authorization uses `sessionUser.id` + roles; per-session CSRF token validated on state-changing requests |
 | Repudiation         | Admin denies assigning a role                       | `role_assigned` and other actions logged with actor, IP, UA, timestamp |
-| Information disclosure | Stack traces or user enumeration               | Generic errors on auth failures; no passwords in audit metadata |
+| Information disclosure | Stack traces or user enumeration               | Structured error handler catches all exceptions; 500s return generic message; sensitive fields redacted from logs; no passwords in audit metadata |
 | Denial of service   | Credential stuffing, API flood                    | Global rate limit; `/auth` sub-limit; login throttle by IP+email; account lockout after 5 failed attempts (15 min) |
 | Elevation of privilege | User reads/writes another user’s document (IDOR) | Document routes check `doc.userId === sessionUser.id` unless `admin` |
 
@@ -86,6 +86,22 @@
 - Admin's own session is unaffected when modifying other users
 
 **How to test:** Log in as a regular user, then have an admin assign a new role to that user. Verify the user's session returns 401 on the next request. The user must re-login to see the new role.
+
+### 7. Information disclosure via error messages
+
+**Scenario:** Application throws an unhandled exception (e.g. database connection failure, programming error). Without proper error handling, the raw stack trace, internal file paths, or database schema details are returned in the HTTP response.
+
+**Expected:** The client receives a generic `{"error": {"code": "INTERNAL_ERROR", "message": "Internal server error"}}` response with an opaque `requestId` for correlation. Internal details are logged server-side but never leaked to the client.
+
+**Mitigations present:**
+- Global Fastify error handler converts all errors to structured `{error: {code, message, requestId}}` responses
+- `AppError` subclasses carry machine-readable error codes (e.g. `VALIDATION_ERROR`, `UNAUTHORIZED`, `NOT_FOUND`)
+- Unknown/unexpected errors return HTTP 500 with `INTERNAL_ERROR` code and no internal details
+- `X-Request-Id` header on every response enables log correlation without exposing internals
+- Error logger sanitizes sensitive fields (`password`, `token`, `cookie`, `secret`, etc.) before writing to logs
+- Validation errors include structured `details` (field-level errors from Zod) but no stack traces
+
+**How to test:** Send a request with invalid JSON or to a valid endpoint with bad params — verify the response has `error.code` and `error.message` fields, no stack traces. Check `X-Request-Id` is present in the response header.
 
 ## Out of scope (for this demo)
 
