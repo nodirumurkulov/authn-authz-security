@@ -1,9 +1,15 @@
-Small Fastify + Prisma (SQLite) API demonstrating authentication, server-side sessions, RBAC, rate limiting, input validation, audit logging, and basic secret handling.
+# authn-authz-security
 
-- login + server-side sessions
-- role-based access control (RBAC)
-- secure API patterns (validation, rate limits, headers)
-- audit logging for sensitive actions
+Small Fastify + Prisma (SQLite) API demonstrating production-grade authentication, authorization, and API security patterns.
+
+- login + server-side sessions with SHA-256 token hashing
+- role-based access control (RBAC) with session rotation on privilege changes
+- CSRF protection via per-session synchronizer token
+- account lockout after failed login attempts
+- structured error handling with machine-readable error codes
+- request tracing via `X-Request-Id` header
+- secure API patterns (Zod validation, rate limits, security headers)
+- audit logging for sensitive actions with request ID correlation
 
 ## Quick start
 
@@ -101,6 +107,31 @@ curl -s -b cookies.txt -H "Content-Type: application/json" \
   -H "x-csrf-token: $CSRF" \
   -d '{"title":"My doc"}' \
   http://localhost:3000/api/documents
+```
+
+### Error response examples
+
+```bash
+# Validation error (missing required field)
+curl -s -H "Content-Type: application/json" \
+  -d '{"email":"not-an-email"}' \
+  http://localhost:3000/auth/register
+# → {"error":{"code":"VALIDATION_ERROR","message":"Invalid input","details":{...},"requestId":"..."}}
+
+# Authentication error (wrong password)
+curl -s -H "Content-Type: application/json" \
+  -d '{"email":"user@example.com","password":"wrong"}' \
+  http://localhost:3000/auth/login
+# → {"error":{"code":"INVALID_CREDENTIALS","message":"Invalid email or password","requestId":"..."}}
+
+# CSRF error (missing token on POST)
+curl -s -b cookies.txt -H "Content-Type: application/json" \
+  -d '{"title":"test"}' \
+  http://localhost:3000/api/documents
+# → {"error":{"code":"CSRF_TOKEN_MISSING","message":"CSRF token is required","requestId":"..."}}
+
+# Account locked (after 5 failed attempts)
+# → {"error":{"code":"ACCOUNT_LOCKED","message":"Account is locked ...","requestId":"..."}}
 ```
 
 ## Security features included
@@ -204,11 +235,21 @@ curl -sI -H "X-Request-Id: txn-abc-123" http://localhost:3000/health | grep x-re
 - **Incident response:** Correlate audit events with specific API requests
 - **Distributed tracing:** Pass the ID through downstream services for full trace visibility
 
+## Running tests
+
+```bash
+npm test
+```
+
+The test suite covers authentication flows, RBAC, IDOR protection, CSRF validation, structured error codes, request ID propagation, and error response format.
+
 ## Project notes
 
 - Never commit `.env` or real secrets.
 - For production, use a managed secret store and HTTPS.
 - If Git behaves oddly in cloud-sync folders, use a local clone path for development.
+- All error responses use a consistent JSON structure — see [Error response format](#error-response-format) above.
+- Breaking change note: error responses use `{error: {code, message}}` instead of `{error: "string"}`.
 
 ## Threat model
 
